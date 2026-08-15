@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import useThemeStore from './stores/themeStore'
 import useAuthStore from './stores/authStore'
 import useSocketStore from './stores/socketStore'
 import ProtectedRoute from './components/ProtectedRoute'
 import AuthPage from './pages/AuthPage'
+import AuthCallback from './pages/AuthCallback'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import DashboardPage from './pages/DashboardPage'
 import StudentDashboard from './pages/StudentDashboard'
@@ -16,15 +17,19 @@ import JoinRoomPage from './pages/JoinRoomPage'
 import RoomHistoryPage from './pages/RoomHistoryPage'
 import RoomResultsPage from './pages/RoomResultsPage'
 import ProfilePage from './pages/ProfilePage'
-import { API_URL } from './config.js'
+import HelpPage from './pages/HelpPage'
+import AdminPage from './pages/AdminPage'
+import { isTokenExpired } from './lib/jwt.js'
 
 function App() {
   const { isDark } = useThemeStore()
-  const { token, isAuthenticated, setAuth } = useAuthStore()
+  const { token, isAuthenticated } = useAuthStore()
   const { connect, disconnect } = useSocketStore()
-  const [samagamaChecked, setSamagamaChecked] = useState(false)
 
-  // Check for Samagama session on app load
+  // On load, if the persisted token is already expired (e.g. the app was opened from a bookmark with a
+  // cached session), drop it immediately so the user lands on the login screen with a clear message
+  // instead of a logged-in-looking UI that only fails when they try to answer. This backs up the
+  // onRehydrateStorage check in authStore for any timing edge.
   useEffect(() => {
     if (isAuthenticated || samagamaChecked) return
 
@@ -92,9 +97,7 @@ function App() {
         setSamagamaChecked(true)
       }
     }
-
-    checkSamagamaSession()
-  }, [isAuthenticated, samagamaChecked, setAuth])
+  }, [])
 
   // Connect socket when user is authenticated with valid token
   useEffect(() => {
@@ -128,6 +131,7 @@ function App() {
     <BrowserRouter basename={basename}>
       <Routes>
         <Route path="/" element={<AuthPage />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/teacher" element={
           <ProtectedRoute allowedRoles={['teacher']}>
@@ -164,6 +168,17 @@ function App() {
             <RoomResultsPage />
           </ProtectedRoute>
         } />
+        <Route path="/teacher/help" element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <HelpPage />
+          </ProtectedRoute>
+        } />
+        {/* Admin-only: teacher approval page. Guarded to teachers here and to isAdmin inside the page + API. */}
+        <Route path="/admin" element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <AdminPage />
+          </ProtectedRoute>
+        } />
         <Route path="/student" element={
           <ProtectedRoute allowedRoles={['student']}>
             <StudentDashboard />
@@ -172,6 +187,11 @@ function App() {
         <Route path="/student/join-room" element={
           <ProtectedRoute allowedRoles={['student']}>
             <JoinRoomPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/student/help" element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <HelpPage />
           </ProtectedRoute>
         } />
         <Route path="/student/room-history" element={
