@@ -13,6 +13,7 @@ export default function StudentSummariesPage() {
   const [loading, setLoading] = useState(true)
   const [expandedSummary, setExpandedSummary] = useState(null)
   const [loadingId, setLoadingId] = useState(null)
+  const [downloadDropdownOpen, setDownloadDropdownOpen] = useState(false)
 
   useEffect(() => {
     fetchSummaries()
@@ -32,8 +33,11 @@ export default function StudentSummariesPage() {
   const handleExpand = async (id) => {
     if (expandedSummary?._id === id) {
       setExpandedSummary(null)
+      setDownloadDropdownOpen(false)
       return
     }
+
+    setDownloadDropdownOpen(false)
 
     setLoadingId(id)
     try {
@@ -45,6 +49,57 @@ export default function StudentSummariesPage() {
     } finally {
       setLoadingId(null)
     }
+  }
+
+  const handleDownloadMarkdown = (summary) => {
+    const date = new Date(summary.createdAt).toLocaleDateString()
+    const content = `# ${summary.title} & ${date}\n\n## Executive Summary\n\n${summary.overview}\n\n## Key Takeaways\n\n${summary.keyTakeaways?.map(pt => `- ${pt}`).join('\n') || ''}`
+    
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${summary.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_Study_Note.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    setDownloadDropdownOpen(false)
+  }
+
+  const handleDownloadPDF = (summary) => {
+    const date = new Date(summary.createdAt).toLocaleDateString()
+    const printWindow = window.open('', '_blank')
+    const htmlContent = `
+      <html>
+        <head>
+          <title>${summary.title} - Study Note</title>
+          <style>
+            body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 40px; }
+            h1 { font-size: 24px; margin-bottom: 8px; }
+            h2 { font-size: 20px; margin-top: 24px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+            .date { color: #666; font-size: 14px; margin-bottom: 32px; }
+            ul { padding-left: 24px; }
+            li { margin-bottom: 8px; }
+          </style>
+        </head>
+        <body>
+          <h1>${summary.title} &amp; ${date}</h1>
+          <h2>Executive Summary</h2>
+          <p>${summary.overview}</p>
+          <h2>Key Takeaways</h2>
+          <ul>
+            ${summary.keyTakeaways?.map(pt => `<li>${pt}</li>`).join('') || ''}
+          </ul>
+        </body>
+      </html>
+    `
+    printWindow.document.write(htmlContent)
+    printWindow.document.close()
+    setTimeout(() => {
+      printWindow.print()
+    }, 250)
+    setDownloadDropdownOpen(false)
   }
 
   return (
@@ -101,8 +156,31 @@ export default function StudentSummariesPage() {
 
                     {isExpanded && expandedSummary && (
                       <div style={{ padding: '20px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)' }}>
-                        <h4 style={{ margin: '0 0 10px', fontSize: '15px', color: 'var(--text-primary)' }}>Overview</h4>
-                        <p style={{ margin: '0 0 20px', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{expandedSummary.overview}</p>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+                          <div>
+                            <h4 style={{ margin: '0 0 10px', fontSize: '15px', color: 'var(--text-primary)' }}>Overview</h4>
+                            <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{expandedSummary.overview}</p>
+                          </div>
+                          <div style={{ position: 'relative' }}>
+                            <button 
+                              onClick={() => setDownloadDropdownOpen(!downloadDropdownOpen)}
+                              style={{ padding: '8px 16px', background: 'var(--accent-gradient, var(--accent))', color: 'white', border: 'none', borderRadius: 'var(--radius)', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}
+                            >
+                              Download Study Note <span style={{ fontSize: '10px' }}>▼</span>
+                            </button>
+                            
+                            {downloadDropdownOpen && (
+                              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-md)', zIndex: 10, minWidth: '180px', overflow: 'hidden' }}>
+                                <button onClick={() => handleDownloadMarkdown(expandedSummary)} style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', fontSize: '13px' }}>
+                                  Markdown (.md)
+                                </button>
+                                <button onClick={() => handleDownloadPDF(expandedSummary)} style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '13px' }}>
+                                  PDF Document (.pdf)
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         
                         <h4 style={{ margin: '0 0 10px', fontSize: '15px', color: 'var(--text-primary)' }}>Key Takeaways</h4>
                         <ul style={{ margin: '0 0 24px', paddingLeft: '20px', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
