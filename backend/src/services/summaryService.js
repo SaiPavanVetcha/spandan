@@ -94,32 +94,55 @@ async function generateWithGoogle(prompt) {
 }
 
 async function callProvider(provider, prompt) {
-  // Same fallback logic as requested: if provider is 'google' or missing, prefer google
-  let targetProvider = provider
-  if (!targetProvider || targetProvider === 'none') {
-    if (config.googleApiKey) targetProvider = 'google'
-    else if (config.minimaxApiKey) targetProvider = 'minimax'
-    else if (config.openaiApiKey) targetProvider = 'openai'
-    else if (config.anthropicApiKey) targetProvider = 'anthropic'
-    else throw new Error('No AI provider configured')
+  const availableProviders = []
+  if (config.googleApiKey) availableProviders.push('google')
+  if (config.minimaxApiKey) availableProviders.push('minimax')
+  if (config.openaiApiKey) availableProviders.push('openai')
+  if (config.anthropicApiKey) availableProviders.push('anthropic')
+
+  if (availableProviders.length === 0) {
+    throw new Error('No AI provider configured')
   }
 
-  switch (targetProvider) {
-    case 'google':
-      if (!config.googleApiKey) throw new Error('Google API key not configured')
-      return { text: await generateWithGoogle(prompt), provider: 'google' }
-    case 'minimax':
-      if (!config.minimaxApiKey) throw new Error('MiniMax API key not configured')
-      return { text: await generateWithMiniMax(prompt), provider: 'minimax' }
-    case 'openai':
-      if (!config.openaiApiKey) throw new Error('OpenAI API key not configured')
-      return { text: await generateWithOpenAI(prompt), provider: 'openai' }
-    case 'anthropic':
-      if (!config.anthropicApiKey) throw new Error('Anthropic API key not configured')
-      return { text: await generateWithAnthropic(prompt), provider: 'anthropic' }
-    default:
-      throw new Error(`Unknown provider: ${targetProvider}`)
+  let providersToTry = [...availableProviders]
+  
+  if (provider && provider !== 'none') {
+    providersToTry = [
+      provider,
+      ...availableProviders.filter(p => p !== provider)
+    ]
   }
+
+  const generators = {
+    google: generateWithGoogle,
+    minimax: generateWithMiniMax,
+    openai: generateWithOpenAI,
+    anthropic: generateWithAnthropic
+  }
+
+  let lastError = null
+
+  for (const currentProvider of providersToTry) {
+    try {
+      const generator = generators[currentProvider]
+      if (!generator) {
+        throw new Error(`Unknown provider: ${currentProvider}`)
+      }
+      
+      if (currentProvider === 'google' && !config.googleApiKey) throw new Error('Google API key not configured')
+      if (currentProvider === 'minimax' && !config.minimaxApiKey) throw new Error('MiniMax API key not configured')
+      if (currentProvider === 'openai' && !config.openaiApiKey) throw new Error('OpenAI API key not configured')
+      if (currentProvider === 'anthropic' && !config.anthropicApiKey) throw new Error('Anthropic API key not configured')
+
+      const text = await generator(prompt)
+      return { text, provider: currentProvider }
+    } catch (err) {
+      console.warn(`${currentProvider.charAt(0).toUpperCase() + currentProvider.slice(1)} provider failed, trying next provider:`, err.message)
+      lastError = err
+    }
+  }
+
+  throw new Error(`All configured AI providers failed. Last error: ${lastError?.message}`)
 }
 
 export const createAndSummarize = async ({ title, rawText, teacherId, roomId, provider }) => {
@@ -259,4 +282,37 @@ export const deleteSummary = async (id, teacherId) => {
 
   await LectureSummary.findByIdAndDelete(id)
   return true
+}
+
+export const askQuestionAboutLecture = async ({ summaryId, user, question, provider }) => {
+  await getByIdForUser(summaryId, user)
+  
+  const summary = await LectureSummary.findById(summaryId).select('+cleanedText +originalText')
+  if (!summary) {
+    throw new Error('Summary not found')
+  }
+
+  const text = summary.cleanedText || summary.originalText || ''
+  if (!text) {
+    throw new Error('No transcript available for this lecture')
+  }
+
+  const cappedText = text.length > 120000 ? text.slice(0, 120000) + '... (truncated)' : text
+  
+  const prompt = `You are an expert academic course tutor answering a student question.
+Answer the question accurately and concisely based strictly on the lecture transcript provided below.
+If the topic is not mentioned or cannot be inferred from the transcript, politely state that it was not covered in this lecture.
+
+TRANSCRIPT CONTEXT:
+${cappedText}
+
+STUDENT QUESTION:
+${question.trim()}`
+
+  const response = await callProvider(provider, prompt)
+  
+  return {
+    answer: response.text,
+    provider: response.provider
+  }
 }

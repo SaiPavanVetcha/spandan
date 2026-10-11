@@ -100,4 +100,30 @@ router.delete('/:id', authenticate, authorize('teacher'), requireApprovedTeacher
   }
 })
 
+// POST /:id/ask (authenticated) — ask AI about the lecture
+router.post('/:id/ask', authenticate, async (req, res, next) => {
+  try {
+    const { question, provider } = req.body
+    if (!question || typeof question !== 'string' || !question.trim()) {
+      return res.status(400).json({ error: 'question must be a non-empty string' })
+    }
+    const result = await summaryService.askQuestionAboutLecture({
+      summaryId: req.params.id,
+      user: req.user,
+      question: question.trim(),
+      provider
+    })
+    res.json({ success: true, answer: result.answer, provider: result.provider })
+  } catch (error) {
+    if (error.message.includes('Not authorized')) {
+      return res.status(403).json({ error: error.message })
+    }
+    if (error.message.includes('not found')) {
+      return res.status(404).json({ error: error.message })
+    }
+    console.error('Ask AI Error:', error.message)
+    return res.status(500).json({ success: false, message: error.message || 'Failed to generate answer' })
+  }
+})
+
 export default router

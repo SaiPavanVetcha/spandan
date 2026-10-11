@@ -14,6 +14,9 @@ export default function StudentSummariesPage() {
   const [expandedSummary, setExpandedSummary] = useState(null)
   const [loadingId, setLoadingId] = useState(null)
   const [downloadDropdownOpen, setDownloadDropdownOpen] = useState(false)
+  const [chats, setChats] = useState({})
+  const [chatInputs, setChatInputs] = useState({})
+  const [isAsking, setIsAsking] = useState(false)
 
   useEffect(() => {
     fetchSummaries()
@@ -100,6 +103,31 @@ export default function StudentSummariesPage() {
       printWindow.print()
     }, 250)
     setDownloadDropdownOpen(false)
+  }
+
+  const handleAskQuestion = async (id) => {
+    const question = chatInputs[id]?.trim()
+    if (!question || isAsking) return
+
+    const newChat = [...(chats[id] || []), { role: 'user', text: question }]
+    setChats({ ...chats, [id]: newChat })
+    setChatInputs({ ...chatInputs, [id]: '' })
+    setIsAsking(true)
+
+    try {
+      const res = await summaryApi.askQuestion(id, question)
+      setChats(prev => ({
+        ...prev,
+        [id]: [...(prev[id] || []), { role: 'ai', text: res.answer }]
+      }))
+    } catch (err) {
+      setChats(prev => ({
+        ...prev,
+        [id]: [...(prev[id] || []), { role: 'ai', text: `Error: ${err.message}` }]
+      }))
+    } finally {
+      setIsAsking(false)
+    }
   }
 
   return (
@@ -195,6 +223,50 @@ export default function StudentSummariesPage() {
                             {expandedSummary.cleanedText || 'No transcript available.'}
                           </div>
                         </details>
+
+                        <div style={{ marginTop: '24px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+                          <details>
+                            <summary style={{ cursor: 'pointer', fontSize: '15px', fontWeight: 600, color: 'var(--accent)', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span>💬</span> Ask AI About This Lecture
+                            </summary>
+                            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-card)', padding: '16px', borderRadius: 'var(--radius)', border: '1px solid var(--border-color)' }}>
+                              <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {chats[expandedSummary._id]?.length ? chats[expandedSummary._id].map((msg, idx) => (
+                                  <div key={idx} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', background: msg.role === 'user' ? 'var(--accent)' : 'var(--bg-primary)', color: msg.role === 'user' ? 'white' : 'var(--text-primary)', padding: '10px 14px', borderRadius: '12px', maxWidth: '85%', fontSize: '14px', border: msg.role === 'user' ? 'none' : '1px solid var(--border-color)' }}>
+                                    <strong style={{ display: 'block', marginBottom: '4px', fontSize: '12px', opacity: 0.8 }}>{msg.role === 'user' ? 'You' : 'AI Tutor'}</strong>
+                                    {msg.text}
+                                  </div>
+                                )) : (
+                                  <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)', textAlign: 'center' }}>Ask any question about this lecture transcript!</p>
+                                )}
+                                {isAsking && (
+                                  <div style={{ alignSelf: 'flex-start', background: 'var(--bg-primary)', color: 'var(--text-secondary)', padding: '10px 14px', borderRadius: '12px', fontSize: '14px', border: '1px solid var(--border-color)' }}>
+                                    <em>AI tutor is thinking...</em>
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                                <input 
+                                  type="text" 
+                                  placeholder="Type your question..." 
+                                  value={chatInputs[expandedSummary._id] || ''}
+                                  onChange={(e) => setChatInputs({ ...chatInputs, [expandedSummary._id]: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleAskQuestion(expandedSummary._id)
+                                  }}
+                                  style={{ flex: 1, padding: '10px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border-color)', background: 'var(--input-bg)', color: 'var(--text-primary)', outline: 'none' }}
+                                />
+                                <button 
+                                  onClick={() => handleAskQuestion(expandedSummary._id)}
+                                  disabled={isAsking || !chatInputs[expandedSummary._id]?.trim()}
+                                  style={{ padding: '10px 20px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 'var(--radius)', fontWeight: 600, cursor: (isAsking || !chatInputs[expandedSummary._id]?.trim()) ? 'not-allowed' : 'pointer', opacity: (isAsking || !chatInputs[expandedSummary._id]?.trim()) ? 0.6 : 1 }}
+                                >
+                                  Send
+                                </button>
+                              </div>
+                            </div>
+                          </details>
+                        </div>
                       </div>
                     )}
                   </div>
