@@ -212,7 +212,7 @@ export default function ClassesPage() {
           {/* Student Join Class Box */}
           {!isTeacher && (
             <div style={{
-              background: 'var(--card-bg)',
+              background: 'var(--card-bg , #ffffff)',
               borderRadius: 'var(--radius)',
               border: '1px solid var(--border-color)',
               padding: isMobile ? '20px' : '28px',
@@ -341,7 +341,7 @@ export default function ClassesPage() {
             <div style={{
               textAlign: 'center',
               padding: isMobile ? '40px 20px' : '64px 20px',
-              background: 'var(--card-bg)',
+              background: 'var(--card-bg,#ffffff)',
               borderRadius: 'var(--radius)',
               border: '1px solid var(--border-color)',
               boxShadow: 'var(--shadow-sm)'
@@ -387,7 +387,7 @@ export default function ClassesPage() {
                   <div
                     key={cls._id}
                     style={{
-                      background: 'var(--card-bg)',
+                      background: 'var(--card-bg,#ffffff)',
                       borderRadius: 'var(--radius)',
                       border: hasLiveSession ? '2px solid #3b82f6' : '1px solid var(--border-color)',
                       boxShadow: hasLiveSession ? '0 8px 24px rgba(59, 130, 246, 0.18)' : 'var(--shadow-md)',
@@ -643,7 +643,7 @@ export default function ClassesPage() {
           backdropFilter: 'blur(2px)'
         }}>
           <div style={{
-            background: 'var(--card-bg)',
+            background: 'var(--card-bg,#ffffff)',
             borderRadius: '16px',
             border: '1px solid var(--border-color)',
             boxShadow: 'var(--shadow-xl)',
@@ -758,7 +758,7 @@ export default function ClassesPage() {
           backdropFilter: 'blur(2px)'
         }}>
           <div style={{
-            background: 'var(--card-bg)',
+            background: 'var(--card-bg,#ffffff)',
             borderRadius: '16px',
             border: '1px solid var(--border-color)',
             boxShadow: 'var(--shadow-xl)',
