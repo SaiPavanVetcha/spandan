@@ -98,6 +98,318 @@ function EmptyState({ onJoin }) {
   )
 }
 
+function buildAnsweringInsights(summary, sessions, questionTypes) {
+  const strengths = []
+  const improvements = []
+  const keyInsights = []
+  const validTypes = questionTypes
+    .filter(item => Number(item.attempted) >= 5 && Number.isFinite(Number(item.accuracy)))
+    .map(item => ({ ...item, attempted: Number(item.attempted), accuracy: Number(item.accuracy) }))
+  const overallAccuracy = Number(summary?.overallAccuracy) || 0
+  const totalQuestions = Number(summary?.totalQuestions) || 0
+  const missedQuestions = Number(summary?.missedQuestions) || 0
+  const attemptedQuestions = Number(summary?.attemptedQuestions) || 0
+  const missedRate = totalQuestions > 0 ? missedQuestions / totalQuestions * 100 : 0
+
+  // Prefer a well-supported question type that performs above the student's overall accuracy.
+  const strongestType = [...validTypes].sort((a, b) => b.accuracy - a.accuracy || b.attempted - a.attempted)[0]
+  if (strongestType && (strongestType.accuracy >= 70 || strongestType.accuracy >= overallAccuracy + 5)) {
+    strengths.push({
+      title: 'Strong question type',
+      text: `${strongestType.label}: ${strongestType.accuracy}% accuracy across ${strongestType.attempted} attempted questions.`
+    })
+  }
+
+  // Use overall accuracy as a second evidence-based strength when type-level data isn't decisive.
+  if (overallAccuracy >= 70 && attemptedQuestions >= 5 && strengths.length < 2) {
+    strengths.push({
+      title: 'Good overall accuracy',
+      text: `You answered ${overallAccuracy}% of ${attemptedQuestions} attempted questions correctly across your sessions.`
+    })
+  }
+  if (missedRate < 5 && totalQuestions >= 10 && strengths.length < 2) {
+    strengths.push({
+      title: 'Consistent participation',
+      text: `You attempted ${attemptedQuestions} of ${totalQuestions} available questions; only ${missedQuestions} were unanswered.`
+    })
+  }
+
+  const weakestType = [...validTypes].sort((a, b) => a.accuracy - b.accuracy || b.attempted - a.attempted)[0]
+  if (weakestType && (weakestType.accuracy < 65 || weakestType.accuracy <= overallAccuracy - 10)) {
+    improvements.push({
+      title: 'Question type to practise',
+      text: `${weakestType.label}: ${weakestType.accuracy}% accuracy across ${weakestType.attempted} attempted questions. Review incorrect answers in this type.`
+    })
+  }
+  if (totalQuestions > 0 && missedRate >= 10) {
+    improvements.push({
+      title: 'Unanswered questions',
+      text: `${missedQuestions} of ${totalQuestions} available questions (${Math.round(missedRate)}%) were unanswered across attended sessions.`
+    })
+  }
+  if (!improvements.length && attemptedQuestions >= 5 && overallAccuracy < 60) {
+    improvements.push({
+      title: 'Overall accuracy to improve',
+      text: `Overall accuracy is ${overallAccuracy}%. Review incorrect answers from your recent sessions to find recurring gaps.`
+    })
+  }
+
+  // Avoid duplicating the latest-session change as both a Strength and a Key Insight.
+  if (sessions.length >= 4) {
+    const windowSize = Math.min(3, Math.floor(sessions.length / 2))
+    const previousWindow = sessions.slice(-2 * windowSize, -windowSize)
+    const recentWindow = sessions.slice(-windowSize)
+    const weightedAccuracy = items => {
+      const attempted = items.reduce((sum, item) => sum + (Number(item.attemptedQuestions) || 0), 0)
+      const correct = items.reduce((sum, item) => sum + (Number(item.correctAnswers) || 0), 0)
+      return attempted > 0 ? Math.round(correct / attempted * 100) : null
+    }
+    const before = weightedAccuracy(previousWindow)
+    const now = weightedAccuracy(recentWindow)
+    if (before != null && now != null) {
+      const change = now - before
+      keyInsights.push({
+        title: change >= 5 ? 'Long-term progress' : change <= -5 ? 'Long-term trend to review' : 'Long-term accuracy is steady',
+        text: `Accuracy across the latest ${recentWindow.length} sessions is ${now}%, compared with ${before}% across the preceding ${previousWindow.length} sessions (${change > 0 ? '+' : ''}${change} percentage points).`
+      })
+    }
+  }
+
+  const responseTimes = sessions.filter(item => Number.isFinite(Number(item.averageResponseTime)) && item.attemptedQuestions > 0)
+  if (keyInsights.length < 2 && responseTimes.length >= 2) {
+    const latest = responseTimes[responseTimes.length - 1]
+    const previous = responseTimes[responseTimes.length - 2]
+    const change = Math.round((Number(latest.averageResponseTime) - Number(previous.averageResponseTime)) * 10) / 10
+    if (Math.abs(change) >= 1) {
+      keyInsights.push({
+        title: change < 0 ? 'Answering faster' : 'Taking more time to answer',
+        text: `Average response time changed from ${previous.averageResponseTime}s to ${latest.averageResponseTime}s. Compare speed with accuracy to understand whether this change is helpful.`
+      })
+    }
+  }
+  if (keyInsights.length < 2 && sessions.length >= 2) {
+    const latest = sessions[sessions.length - 1]
+    const previous = sessions[sessions.length - 2]
+    const change = Number(latest.accuracy) - Number(previous.accuracy)
+    keyInsights.push({
+      title: change >= 5 ? 'Recent accuracy improved' : change <= -5 ? 'Recent accuracy declined' : 'Recent accuracy is steady',
+      text: `Your latest session accuracy was ${latest.accuracy}% versus ${previous.accuracy}% in the previous session (${change > 0 ? '+' : ''}${change} percentage points).`
+    })
+  }
+
+  if (!strengths.length) strengths.push({
+    title: 'Strengths still emerging',
+    text: validTypes.length
+      ? `Your strongest measured type is ${strongestType.label} at ${strongestType.accuracy}%, but it has not reached the current strength benchmark yet.`
+      : 'Session history is available, but there are not enough question-type attempts to confirm a reliable strength yet.'
+  })
+  if (!improvements.length) improvements.push({
+    title: 'No major concern detected',
+    text: validTypes.length || attemptedQuestions >= 5
+      ? 'Current data does not show a question type or unanswered-question rate that crosses the improvement thresholds.'
+      : 'More answered questions are needed to identify a reliable area to improve.'
+  })
+  if (!keyInsights.length) keyInsights.push({
+    title: 'More sessions needed for trends',
+    text: 'Complete another session to compare performance over time. Current values are based only on the history available.'
+  })
+
+  return { strengths: strengths.slice(0, 2), improvements: improvements.slice(0, 2), keyInsights: keyInsights.slice(0, 2) }
+}
+
+function AnsweringPatternSection({ summary, history, answeringPattern, isMobile }) {
+  const attended = history.filter(item => item.attended)
+  const recentSessions = attended.slice(-8)
+  const typeLabels = {
+    TF: 'True / False',
+    MCQ: 'Single Answer (MCQ)',
+    MSQ: 'Multiple Select (MSQ)',
+  }
+  const questionTypes = ['TF', 'MCQ', 'MSQ'].map(type => {
+    const existing = (answeringPattern?.questionTypes || []).find(
+      item => String(item.type).toUpperCase() === type
+    )
+    return {
+      type,
+      label: typeLabels[type],
+      attempted: Number(existing?.attempted) || 0,
+      accuracy: Number(existing?.accuracy) || 0,
+      available: Boolean(existing && Number(existing.attempted) > 0),
+    }
+  })
+  const insights = useMemo(
+    () => buildAnsweringInsights(summary, attended, questionTypes),
+    [summary, attended, questionTypes]
+  )
+
+  const correct = Number(summary?.correctAnswers) || 0
+  const incorrect = Number(summary?.incorrectAnswers) || 0
+  const unanswered = Number(summary?.missedQuestions) || 0
+  const total = correct + incorrect + unanswered
+  const percent = (value) => total > 0 ? Math.round((value / total) * 100) : 0
+  const maxQuestions = Math.max(1, ...recentSessions.map(item => Number(item.totalQuestions) || 0))
+  const responseTimeSessions = recentSessions.filter(item => Number.isFinite(item.averageResponseTime))
+  const averageResponseTime = answeringPattern?.averageResponseTime
+
+  const cardStyle = {
+    background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+    borderRadius: 22, padding: isMobile ? 18 : 24, minWidth: 0, boxShadow: 'var(--shadow-md)'
+  }
+  const miniStatStyle = { borderRadius: 13, padding: 12, background: 'var(--bg-secondary, rgba(127,127,127,0.06))', minWidth: 0 }
+  const InsightList = ({ title, icon, color, items }) => (
+    <div className="chart-card insight-list-card" style={cardStyle}>
+      <h3 style={{ margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8, color, fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}><span aria-hidden="true">{icon}</span>{title}</h3>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {items.map((item, index) => (
+          <div
+            className="insight-item"
+            key={`${item.title}-${index}`}
+            title={`${item.title}: ${item.text}`}
+            tabIndex={0}
+            style={{ display: 'flex', gap: 10, alignItems: 'flex-start', borderRadius: 12, padding: 9, margin: '-2px -9px', outlineOffset: 2 }}
+          >
+            <span style={{ flex: '0 0 24px', height: 24, display: 'grid', placeItems: 'center', borderRadius: 8, background: `${color}18`, color, fontSize: 12, fontWeight: 800 }}>{index + 1}</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: 14 }}>{item.title}</div>
+              <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6 }}>{item.text}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, margin: '30px 0 16px' }}>
+        <div>
+          <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: isMobile ? 22 : 26, letterSpacing: '-0.03em' }}>Answering Pattern</h2>
+          <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.5 }}>How you answer questions across your completed sessions.</p>
+        </div>
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Based on {summary?.totalSessions || 0} attended sessions</span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.85fr 1.15fr', gap: 16, marginBottom: 16 }}>
+        <div className="chart-card" style={cardStyle}>
+          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Overall Answer Distribution</h3>
+          <p style={{ margin: '5px 0 16px', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>Correct, incorrect and unanswered questions.</p>
+          {total === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>No question data is available yet.</p> : <>
+            <div style={{ display: 'flex', height: 12, overflow: 'hidden', borderRadius: 999, background: 'var(--bg-secondary, #e5e7eb)', marginBottom: 16 }} aria-label={`Answer distribution: ${percent(correct)} percent correct, ${percent(incorrect)} percent incorrect, ${percent(unanswered)} percent unanswered`}>
+              <div style={{ width: `${percent(correct)}%`, background: '#16a34a', transition: 'width .3s ease' }} />
+              <div style={{ width: `${percent(incorrect)}%`, background: '#dc2626', transition: 'width .3s ease' }} />
+              <div style={{ width: `${percent(unanswered)}%`, background: '#94a3b8', transition: 'width .3s ease' }} />
+            </div>
+            {[['Correct', correct, '#16a34a'], ['Incorrect', incorrect, '#dc2626'], ['Unanswered', unanswered, '#94a3b8']].map(([label, value, color]) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 10, fontSize: 13 }}>
+                <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 8, height: 8, background: color, borderRadius: '50%' }} />{label}</span>
+                <strong style={{ color: 'var(--text-primary)' }}>{value} <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>({percent(value)}%)</span></strong>
+              </div>
+            ))}
+          </>}
+          <div style={{ ...miniStatStyle, marginTop: 16 }}>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600 }}>Average response time</div>
+            <div style={{ marginTop: 4, color: 'var(--text-primary)', fontSize: 26, fontWeight: 850, letterSpacing: '-0.03em' }}>{Number.isFinite(averageResponseTime) ? `${averageResponseTime}s` : '—'}</div>
+          </div>
+        </div>
+
+        <div className="chart-card" style={cardStyle}>
+          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Answers per Session</h3>
+          {recentSessions.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Attend a completed session to see this graph.</p> : (() => {
+            const maxCount = Math.max(1, ...recentSessions.map(session =>
+              (Number(session.correctAnswers) || 0) +
+              (Number(session.incorrectAnswers) || 0) +
+              (Number(session.missedQuestions) || 0)
+            ))
+            const axisMax = Math.ceil(maxCount / 5) * 5 || 5
+            const ticks = 5
+            return <>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                <div aria-label="Y-axis: questions" style={{ width: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', writingMode: 'vertical-rl', transform: 'rotate(180deg)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, letterSpacing: '0.01em' }}>Questions</div>
+                <div style={{ width: 30, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', paddingBottom: 4, color: 'var(--text-secondary)', fontSize: 12, textAlign: 'right' }}>
+                  {Array.from({ length: ticks + 1 }, (_, i) => Math.round(axisMax - (axisMax / ticks) * i)).map((value, i) => <span key={`${value}-${i}`}>{value}</span>)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ position: 'relative', height: 180, borderBottom: '1px solid var(--border-color)', borderLeft: '1px solid var(--border-color)', background: `repeating-linear-gradient(to bottom, transparent 0, transparent calc(20% - 1px), var(--border-color) calc(20% - 1px), var(--border-color) 20%)`, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', gap: 8, padding: '0 8px', boxSizing: 'border-box' }}>
+                    {recentSessions.map((session, index) => {
+                      const correct = Number(session.correctAnswers) || 0
+                      const incorrect = Number(session.incorrectAnswers) || 0
+                      const unanswered = Number(session.missedQuestions) || 0
+                      const total = correct + incorrect + unanswered
+                      const height = value => `${(value / axisMax) * 100}%`
+                      return <div key={session.roomId || `${session.name}-${index}`} title={`${session.name}: ${correct} correct, ${incorrect} incorrect, ${unanswered} unanswered; ${total} total questions`} style={{ height: '100%', flex: '1 1 0', minWidth: 0, maxWidth: 64, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }}>
+                        <div style={{ height: `${Math.min(100, (total / axisMax) * 100)}%`, width: 'min(100%, 34px)', minHeight: total > 0 ? 2 : 0, display: 'flex', flexDirection: 'column-reverse', overflow: 'hidden', borderRadius: '5px 5px 0 0', alignSelf: 'center' }}>
+                          <div style={{ height: height(correct), background: '#16a34a' }} />
+                          <div style={{ height: height(incorrect), background: '#dc2626' }} />
+                          <div style={{ height: height(unanswered), background: '#94a3b8' }} />
+                        </div>
+                      </div>
+                    })}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${recentSessions.length}, minmax(0, 1fr))`, gap: 8, paddingTop: 8 }}>
+                    {recentSessions.map((session, index) => <div key={session.roomId || `${session.name}-label-${index}`} title={session.name || 'Unnamed session'} style={{ minWidth: 0, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 11, overflowWrap: 'anywhere', lineHeight: 1.4 }}>{session.name || `Session ${index + 1}`}</div>)}
+                  </div>
+                  <div style={{ marginTop: 8, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, letterSpacing: '0.01em' }}>Session</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
+                {[['Correct', '#16a34a'], ['Incorrect', '#dc2626'], ['Unanswered', '#94a3b8']].map(([label, color]) => <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)', fontSize: 12 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />{label}</span>)}
+              </div>
+            </>
+          })()}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <div className="chart-card" style={cardStyle}>
+          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Accuracy by Question Type</h3>
+          <p style={{ margin: '5px 0 16px', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>Calculated from answered questions; low sample sizes are shown but not used for insight thresholds.</p>
+          {questionTypes.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Question-type patterns will appear after you answer questions in completed sessions.</p> : <div style={{ display: 'grid', gap: 16 }}>
+            {questionTypes.map(item => (
+              <div key={item.type}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6, fontSize: 14 }}>
+                  <strong style={{ color: 'var(--text-primary)' }}>{item.label}</strong>
+                  <span style={{ color: 'var(--text-secondary)', textAlign: 'right' }}>{item.available ? `${item.accuracy}% · ${item.attempted} attempted` : 'No data yet'}</span>
+                </div>
+                <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-secondary, #e5e7eb)' }}>
+                  <div style={{ width: `${item.available ? Math.max(0, Math.min(100, item.accuracy)) : 0}%`, height: '100%', borderRadius: 999, background: !item.available ? 'transparent' : item.accuracy >= 75 ? '#16a34a' : item.accuracy >= 60 ? '#d97706' : '#dc2626', transition: 'width .3s ease' }} />
+                </div>
+              </div>
+            ))}
+          </div>}
+        </div>
+
+        <div className="chart-card" style={cardStyle}>
+          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Average Response Time</h3>
+          <p style={{ margin: '5px 0 16px', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>Average time per answered question from the last 8 attended sessions; sessions without response-time data are omitted.</p>
+          {responseTimeSessions.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Response-time data is not available for these sessions.</p> : <div style={{ display: 'grid', gap: 13 }}>
+            {responseTimeSessions.map((session, index) => {
+              const maxTime = Math.max(1, ...responseTimeSessions.map(item => item.averageResponseTime))
+              const width = Math.max(3, (session.averageResponseTime / maxTime) * 100)
+              return (
+                <div key={session.roomId || `${session.name}-${index}`} title={session.name}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 5, fontSize: 13 }}>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.name}</span>
+                    <strong style={{ color: 'var(--text-primary)', fontWeight: 800, flexShrink: 0 }}>{session.averageResponseTime}s</strong>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-secondary, #e5e7eb)' }}>
+                    <div style={{ width: `${width}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg, #6366f1, #06b6d4)' }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 16 }}>
+        <InsightList title="Strengths" icon="🏆" color="#15803d" items={insights.strengths} />
+        <InsightList title="Areas to Improve" icon="🎯" color="#b91c1c" items={insights.improvements} />
+        <InsightList title="Key Insights" icon="📈" color="#6d28d9" items={insights.keyInsights} />
+      </div>
+    </div>
+  )
+}
+
 function StudentPerformancePage() {
   const isMobile = useIsMobile()
   const navigate = useNavigate()
@@ -143,6 +455,7 @@ function StudentPerformancePage() {
   const history = data?.history || []
   const hasHistory = history.length > 0
   const chartTrends = data?.trends || { score: [], accuracy: [], rank: [] }
+  const answeringPattern = data?.answeringPattern || { averageResponseTime: null, totalResponses: 0, questionTypes: [] }
   const chartHistoryCount = history.length
   const tableHistory = history
 
@@ -497,6 +810,30 @@ function StudentPerformancePage() {
 
         .chart-card p,
         .change-card p { position: relative; z-index: 1; }
+
+        .insight-list-card {
+          cursor: default;
+        }
+
+        .insight-item {
+          position: relative;
+          transition: background .22s ease, transform .22s ease, box-shadow .22s ease;
+        }
+
+        .insight-item:hover,
+        .insight-item:focus-visible {
+          background: color-mix(in srgb, var(--pj-brand) 7%, transparent);
+          transform: translateX(3px);
+          box-shadow: inset 3px 0 0 var(--pj-brand);
+        }
+
+        .insight-item:focus-visible {
+          outline: 2px solid color-mix(in srgb, var(--pj-brand) 55%, transparent);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .insight-item { transition: none !important; }
+        }
 
         /* ---- trend visualization ---- */
         .chart-card > div > svg {
@@ -923,6 +1260,8 @@ function StudentPerformancePage() {
                   </div>
                 ))}
               </div>
+
+              <AnsweringPatternSection summary={summary} history={history} answeringPattern={answeringPattern} isMobile={isMobile} />
 
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 18, marginBottom: 22 }}>
                 {[['Best Performance', summary.bestPerformance, 'var(--accent, #3b82f6)'], ['Weakest Performance', summary.weakestPerformance, '#8b5cf6']].map(([label, item, accent]) => (
