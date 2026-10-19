@@ -1,0 +1,671 @@
+import Class from '../models/Class.js'
+import ClassMember from '../models/ClassMember.js'
+import Room from '../models/Room.js'
+import RoomMember from '../models/RoomMember.js'
+import Question from '../models/Question.js'
+import Response from '../models/Response.js'
+import User from '../models/User.js'
+import { createRoom } from './roomService.js'
+
+export const createClass = async ({ name, teacherId, settings = {} }) => {
+  if (!name || !name.trim()) {
+    throw new Error('Class name is required')
+  }
+
+  const newClass = new Class({
+    name: name.trim(),
+    teacher: teacherId,
+    settings
+  })
+
+  await newClass.save()
+  return newClass
+}
+
+export const getTeacherClasses = async (teacherId) => {
+  const classes = await Class.find({ teacher: teacherId }).sort({ createdAt: -1 }).lean()
+
+  const classIds = classes.map(c => c._id)
+
+  // Find all rooms under these classes
+  const rooms = await Room.find({ classId: { $in: classIds } })
+    .select('_id classId name code isActive endedAt createdAt')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  // Find all members under these classes
+  const members = await ClassMember.find({ classId: { $in: classIds } })
+    .select('classId status')
+    .lean()
+
+  // Group rooms and members by classId
+  const roomsByClass = new Map()
+  for (const r of rooms) {
+    const key = String(r.classId)
+    if (!roomsByClass.has(key)) roomsByClass.set(key, [])
+    roomsByClass.get(key).push(r)
+  }
+
+  const membersByClass = new Map()
+  for (const m of members) {
+    const key = String(m.classId)
+    if (!membersByClass.has(key)) membersByClass.set(key, { active: 0, pending: 0, removed: 0 })
+    const counts = membersByClass.get(key)
+    if (m.status === 'active') counts.active++
+    else if (m.status === 'pending') counts.pending++
+    else if (m.status === 'removed') counts.removed++
+  }
+
+  return classes.map(c => {
+    const cRooms = roomsByClass.get(String(c._id)) || []
+    const mCounts = membersByClass.get(String(c._id)) || { active: 0, pending: 0, removed: 0 }
+    const activeSession = cRooms.find(r => r.isActive && !r.endedAt) || null
+
+    return {
+      ...c,
+      totalSessions: cRooms.length,
+      activeSession: activeSession ? { _id: activeSession._id, name: activeSession.name, code: activeSession.code } : null,
+      totalMembers: mCounts.active,
+      pendingRequests: mCounts.pending
+    }
+  })
+}
+
+export const getStudentClasses = async (studentId) => {
+  const memberships = await ClassMember.find({
+    studentId,
+    status: { $in: ['active', 'pending'] }
+  })
+    .populate({
+      path: 'classId',
+      populate: { path: 'teacher', select: 'name email profileImage' }
+    })
+    .sort({ updatedAt: -1 })
+    .lean()
+
+  // Filter out any where classId is null (e.g. deleted class)
+  const validMemberships = memberships.filter(m => m.classId)
+  const classIds = validMemberships.map(m => m.classId._id)
+
+  // Find active sessions for these classes
+  const activeRooms = await Room.find({
+    classId: { $in: classIds },
+    isActive: true,
+    endedAt: null
+  }).select('_id classId name code createdAt').lean()
+
+  const activeByClass = new Map(activeRooms.map(r => [String(r.classId), r]))
+
+  // Total session counts
+  const sessionCounts = await Room.aggregate([
+    { $match: { classId: { $in: classIds } } },
+    { $group: { _id: '$classId', count: { $sum: 1 } } }
+  ])
+  const sessionCountMap = new Map(sessionCounts.map(s => [String(s._id), s.count]))
+
+  return validMemberships.map(m => {
+    const cls = m.classId
+    const activeSession = activeByClass.get(String(cls._id)) || null
+    return {
+      _id: cls._id,
+      name: cls.name,
+      code: cls.code,
+      teacher: cls.teacher,
+      isActive: cls.isActive,
+      memberStatus: m.status,
+      joinedAt: m.joinedAt,
+      totalSessions: sessionCountMap.get(String(cls._id)) || 0,
+      activeSession: activeSession ? { _id: activeSession._id, name: activeSession.name, code: activeSession.code } : null
+    }
+  })
+}
+
+export const getClassById = async (classId, user) => {
+  const cls = await Class.findById(classId)
+    .populate('teacher', 'name email profileImage')
+    .lean()
+
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+
+  const isTeacherOwner = String(cls.teacher._id || cls.teacher) === String(user._id)
+  let userMembership = null
+
+  if (!isTeacherOwner) {
+    userMembership = await ClassMember.findOne({ classId, studentId: user._id }).lean()
+    if (!userMembership || userMembership.status === 'removed') {
+      const err = new Error('Access denied to this class')
+      err.status = 403
+      throw err
+    }
+  }
+
+  // Active session
+  const activeSession = await Room.findOne({
+    classId,
+    isActive: true,
+    endedAt: null
+  }).select('_id name code createdAt settings').lean()
+
+  // Counts
+  const totalSessions = await Room.countDocuments({ classId })
+  const memberCounts = await ClassMember.aggregate([
+    { $match: { classId: cls._id } },
+    { $group: { _id: '$status', count: { $sum: 1 } } }
+  ])
+  const countMap = { active: 0, pending: 0, removed: 0 }
+  for (const mc of memberCounts) {
+    if (countMap[mc._id] !== undefined) countMap[mc._id] = mc.count
+  }
+
+  return {
+    class: cls,
+    isOwner: isTeacherOwner,
+    userMembership,
+    activeSession: activeSession ? {
+      _id: activeSession._id,
+      name: activeSession.name,
+      code: activeSession.code,
+      createdAt: activeSession.createdAt,
+      settings: activeSession.settings
+    } : null,
+    stats: {
+      totalSessions,
+      totalMembers: countMap.active,
+      pendingRequests: countMap.pending,
+      removedMembers: countMap.removed
+    }
+  }
+}
+
+export const joinClassByCode = async (code, studentId) => {
+  if (!code || !code.trim()) {
+    const err = new Error('Class code is required')
+    err.status = 400
+    throw err
+  }
+
+  const cls = await Class.findByCode(code)
+  if (!cls) {
+    const err = new Error('Class not found. Please verify the 6-character code.')
+    err.status = 404
+    throw err
+  }
+
+  if (!cls.isActive) {
+    const err = new Error('This class is no longer active')
+    err.status = 400
+    throw err
+  }
+
+  // Check existing membership
+  let member = await ClassMember.findOne({ classId: cls._id, studentId })
+
+  if (!member) {
+    // First time join -> status is active immediately
+    member = new ClassMember({
+      classId: cls._id,
+      studentId,
+      status: 'active',
+      joinedAt: new Date()
+    })
+    await member.save()
+    return {
+      class: cls,
+      member,
+      status: 'active',
+      message: 'Enrolled in class successfully'
+    }
+  }
+
+  if (member.status === 'active') {
+    return {
+      class: cls,
+      member,
+      status: 'active',
+      message: 'You are already enrolled in this class'
+    }
+  }
+
+  if (member.status === 'pending') {
+    return {
+      class: cls,
+      member,
+      status: 'pending',
+      message: 'Your re-join request is pending approval from the teacher'
+    }
+  }
+
+  if (member.status === 'removed') {
+    // Student rejoining after being removed -> status becomes pending (needs teacher approval)
+    // Same document is preserved!
+    member.status = 'pending'
+    await member.save()
+    return {
+      class: cls,
+      member,
+      status: 'pending',
+      message: 'Re-join request submitted. Waiting for teacher approval.'
+    }
+  }
+
+  return { class: cls, member, status: member.status }
+}
+
+export const updateMemberStatus = async (classId, studentId, teacherId, action) => {
+  const cls = await Class.findById(classId)
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+
+  if (String(cls.teacher) !== String(teacherId)) {
+    const err = new Error('Only the class teacher can modify membership')
+    err.status = 403
+    throw err
+  }
+
+  const member = await ClassMember.findOne({ classId, studentId })
+  if (!member) {
+    const err = new Error('Member not found in class')
+    err.status = 404
+    throw err
+  }
+
+  if (action === 'approve') {
+    member.status = 'active'
+    member.approvedAt = new Date()
+    await member.save()
+    return { member, message: 'Member approved and restored to active' }
+  } else if (action === 'remove') {
+    // Soft remove: all historical data kept, status set to removed
+    member.status = 'removed'
+    member.removedAt = new Date()
+    await member.save()
+    return { member, message: 'Member removed from class' }
+  } else if (action === 'reject') {
+    // Teacher rejects re-join request: stays removed
+    member.status = 'removed'
+    member.removedAt = new Date()
+    await member.save()
+    return { member, message: 'Join request rejected' }
+  } else {
+    const err = new Error('Invalid action. Expected approve, remove, or reject.')
+    err.status = 400
+    throw err
+  }
+}
+
+export const createClassSession = async (classId, teacherId, { name, settings = {} }) => {
+  const cls = await Class.findById(classId)
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+
+  if (String(cls.teacher) !== String(teacherId)) {
+    const err = new Error('Only the class teacher can start a session')
+    err.status = 403
+    throw err
+  }
+
+  // Enforce Product Rule 1: One active session per class
+  const activeSession = await Room.findOne({
+    classId,
+    isActive: true,
+    endedAt: null
+  })
+
+  if (activeSession) {
+    const err = new Error('An active session is already running for this class. End the current live session first.')
+    err.status = 400
+    err.code = 'ACTIVE_SESSION_EXISTS'
+    err.activeRoomId = activeSession._id
+    throw err
+  }
+
+  // Inherit class settings as defaults if not overridden
+  const mergedSettings = {
+    ...(cls.settings || {}),
+    ...settings
+  }
+
+  const sessionName = (name && name.trim()) ? name.trim() : `${cls.name} - Session`
+  const room = await createRoom(sessionName, teacherId, mergedSettings, classId)
+  return room
+}
+
+export const getClassSessions = async (classId) => {
+  const rooms = await Room.find({ classId })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const roomIds = rooms.map(r => r._id)
+
+  const [questionCounts, responseCounts, participantCounts] = await Promise.all([
+    Question.aggregate([
+      { $match: { roomId: { $in: roomIds } } },
+      { $group: { _id: '$roomId', count: { $sum: 1 } } }
+    ]),
+    Response.aggregate([
+      { $match: { roomId: { $in: roomIds } } },
+      { $group: { _id: '$roomId', count: { $sum: 1 } } }
+    ]),
+    RoomMember.aggregate([
+      { $match: { roomId: { $in: roomIds } } },
+      { $group: { _id: '$roomId', count: { $sum: 1 } } }
+    ])
+  ])
+
+  const qMap = new Map(questionCounts.map(q => [String(q._id), q.count]))
+  const rMap = new Map(responseCounts.map(r => [String(r._id), r.count]))
+  const pMap = new Map(participantCounts.map(p => [String(p._id), p.count]))
+
+  return rooms.map(room => ({
+    ...room,
+    questionCount: qMap.get(String(room._id)) || 0,
+    responseCount: rMap.get(String(room._id)) || 0,
+    participantCount: pMap.get(String(room._id)) || 0
+  }))
+}
+
+export const getClassMembersWithPerformance = async (classId, teacherId) => {
+  const cls = await Class.findById(classId)
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+
+  if (String(cls.teacher) !== String(teacherId)) {
+    const err = new Error('Access denied')
+    err.status = 403
+    throw err
+  }
+
+  const members = await ClassMember.find({ classId })
+    .populate('studentId', 'name email profileImage')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  // All rooms under this class
+  const classRooms = await Room.find({ classId })
+    .select('_id name code createdAt endedAt')
+    .lean()
+  const roomIds = classRooms.map(r => r._id)
+  const totalClassSessions = classRooms.length
+
+  // Room members for these rooms
+  const roomMembers = await RoomMember.find({ roomId: { $in: roomIds } })
+    .select('roomId studentId joinedAt')
+    .lean()
+
+  // Responses for these rooms
+  const responses = await Response.find({ roomId: { $in: roomIds } })
+    .select('roomId studentId isCorrect pointsEarned createdAt')
+    .lean()
+
+  // Build lookups per student
+  const studentAttendedRooms = new Map() // sid -> Set of roomIds
+  const studentResponses = new Map()     // sid -> array of responses
+
+  for (const rm of roomMembers) {
+    const sid = String(rm.studentId)
+    if (!studentAttendedRooms.has(sid)) studentAttendedRooms.set(sid, new Set())
+    studentAttendedRooms.get(sid).add(String(rm.roomId))
+  }
+
+  for (const resp of responses) {
+    const sid = String(resp.studentId)
+    if (!studentAttendedRooms.has(sid)) studentAttendedRooms.set(sid, new Set())
+    studentAttendedRooms.get(sid).add(String(resp.roomId))
+
+    if (!studentResponses.has(sid)) studentResponses.set(sid, [])
+    studentResponses.get(sid).push(resp)
+  }
+
+  const enrichMember = (m) => {
+    const student = m.studentId || {}
+    const sid = String(student._id || m.studentId)
+    const attendedSet = studentAttendedRooms.get(sid) || new Set()
+    const studentResps = studentResponses.get(sid) || []
+
+    const sessionsAttended = attendedSet.size
+    const pollsAttempted = studentResps.length
+    const correctCount = studentResps.filter(r => r.isCorrect).length
+    const accuracy = pollsAttempted > 0 ? Math.round((correctCount / pollsAttempted) * 100) : 0
+
+    let lastActive = m.joinedAt
+    for (const r of studentResps) {
+      if (r.createdAt && (!lastActive || new Date(r.createdAt) > new Date(lastActive))) {
+        lastActive = r.createdAt
+      }
+    }
+
+    return {
+      _id: m._id,
+      studentId: sid,
+      name: student.name || 'Student',
+      email: student.email || '',
+      profileImage: student.profileImage || null,
+      status: m.status,
+      joinedAt: m.joinedAt,
+      removedAt: m.removedAt,
+      approvedAt: m.approvedAt,
+      sessionsAttended,
+      totalClassSessions,
+      pollsAttempted,
+      correctCount,
+      accuracy,
+      lastActive
+    }
+  }
+
+  const enriched = members.map(enrichMember)
+
+  return {
+    active: enriched.filter(m => m.status === 'active'),
+    pending: enriched.filter(m => m.status === 'pending'),
+    removed: enriched.filter(m => m.status === 'removed'),
+    totalClassSessions
+  }
+}
+
+export const getStudentPerformanceInClass = async (classId, studentId) => {
+  const [cls, member] = await Promise.all([
+    Class.findById(classId).populate('teacher', 'name email').lean(),
+    ClassMember.findOne({ classId, studentId }).lean()
+  ])
+
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+
+  const student = await User.findById(studentId).select('name email profileImage').lean()
+  const classRooms = await Room.find({ classId }).sort({ createdAt: -1 }).lean()
+  const roomIds = classRooms.map(r => r._id)
+
+  const [roomMembers, responses, allQuestions] = await Promise.all([
+    RoomMember.find({ roomId: { $in: roomIds }, studentId }).lean(),
+    Response.find({ roomId: { $in: roomIds }, studentId }).lean(),
+    Question.find({ roomId: { $in: roomIds }, status: 'approved' }).lean()
+  ])
+
+  const attendedRoomIds = new Set(roomMembers.map(rm => String(rm.roomId)))
+  responses.forEach(r => attendedRoomIds.add(String(r.roomId)))
+
+  const questionsByRoom = new Map()
+  for (const q of allQuestions) {
+    const key = String(q.roomId)
+    if (!questionsByRoom.has(key)) questionsByRoom.set(key, 0)
+    questionsByRoom.set(key, questionsByRoom.get(key) + 1)
+  }
+
+  const responsesByRoom = new Map()
+  for (const r of responses) {
+    const key = String(r.roomId)
+    if (!responsesByRoom.has(key)) responsesByRoom.set(key, [])
+    responsesByRoom.get(key).push(r)
+  }
+
+  // Session-by-session breakdown
+  const sessionBreakdown = classRooms.map(room => {
+    const rid = String(room._id)
+    const attended = attendedRoomIds.has(rid)
+    const roomResps = responsesByRoom.get(rid) || []
+    const totalQ = questionsByRoom.get(rid) || 0
+    const attempted = roomResps.length
+    const correct = roomResps.filter(r => r.isCorrect).length
+    const accuracy = attempted > 0 ? Math.round((correct / attempted) * 100) : 0
+
+    return {
+      roomId: room._id,
+      roomName: room.name,
+      roomCode: room.code,
+      date: room.createdAt,
+      endedAt: room.endedAt,
+      isActive: room.isActive,
+      attended,
+      totalQuestions: totalQ,
+      pollsAttempted: attempted,
+      correctCount: correct,
+      accuracy
+    }
+  })
+
+  const pollsAttempted = responses.length
+  const correctCount = responses.filter(r => r.isCorrect).length
+  const accuracy = pollsAttempted > 0 ? Math.round((correctCount / pollsAttempted) * 100) : 0
+
+  return {
+    student: {
+      _id: student?._id,
+      name: student?.name,
+      email: student?.email,
+      profileImage: student?.profileImage
+    },
+    status: member?.status || 'active',
+    joinedAt: member?.joinedAt,
+    sessionsAttended: attendedRoomIds.size,
+    totalClassSessions: classRooms.length,
+    pollsAttempted,
+    correctCount,
+    accuracy,
+    sessions: sessionBreakdown
+  }
+}
+
+export const exportClassCsv = async (classId, teacherId) => {
+  const cls = await Class.findById(classId).lean()
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+
+  if (String(cls.teacher) !== String(teacherId)) {
+    const err = new Error('Access denied')
+    err.status = 403
+    throw err
+  }
+
+  const { active, pending, removed, totalClassSessions } = await getClassMembersWithPerformance(classId, teacherId)
+  const allMembers = [...active, ...pending, ...removed]
+
+  const esc = (v) => {
+    const s = v == null ? '' : String(v)
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+  }
+  const row = (arr) => arr.map(esc).join(',') + '\n'
+
+  let csv = '\uFEFF' // UTF-8 BOM
+  csv += `# Class: ${cls.name} (Code: ${cls.code})\n`
+  csv += `# Total Sessions: ${totalClassSessions}\n`
+  csv += `# Export Date: ${new Date().toISOString()}\n\n`
+
+  csv += row([
+    'Student Name',
+    'Email',
+    'Status',
+    'Sessions Attended',
+    'Total Sessions',
+    'Attendance %',
+    'Polls Attempted',
+    'Correct Answers',
+    'Accuracy %',
+    'Joined Date',
+    'Last Active'
+  ])
+
+  for (const m of allMembers) {
+    const attPct = totalClassSessions > 0 ? Math.round((m.sessionsAttended / totalClassSessions) * 100) : 0
+    csv += row([
+      m.name,
+      m.email,
+      m.status,
+      m.sessionsAttended,
+      totalClassSessions,
+      `${attPct}%`,
+      m.pollsAttempted,
+      m.correctCount,
+      `${m.accuracy}%`,
+      m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : '',
+      m.lastActive ? new Date(m.lastActive).toLocaleDateString() : ''
+    ])
+  }
+
+  const safeName = (cls.name || 'class').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 50)
+  const filename = `Spandan_Class_${safeName}_${cls.code}_Roster.csv`
+
+  return { csv, filename }
+}
+
+export const getClassStats = async (classId, teacherId) => {
+  const cls = await Class.findById(classId).lean()
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+
+  if (String(cls.teacher) !== String(teacherId)) {
+    const err = new Error('Access denied')
+    err.status = 403
+    throw err
+  }
+
+  const rooms = await Room.find({ classId }).select('_id isActive endedAt').lean()
+  const roomIds = rooms.map(r => r._id)
+
+  const [members, totalQuestions, allResponses] = await Promise.all([
+    ClassMember.find({ classId }).select('status').lean(),
+    Question.countDocuments({ roomId: { $in: roomIds }, status: 'approved' }),
+    Response.find({ roomId: { $in: roomIds } }).select('isCorrect studentId').lean()
+  ])
+
+  const totalSessions = rooms.length
+  const activeSessions = rooms.filter(r => r.isActive && !r.endedAt).length
+  const activeMembers = members.filter(m => m.status === 'active').length
+  const pendingRequests = members.filter(m => m.status === 'pending').length
+
+  const totalResponses = allResponses.length
+  const totalCorrect = allResponses.filter(r => r.isCorrect).length
+  const averageAccuracy = totalResponses > 0 ? Math.round((totalCorrect / totalResponses) * 100) : 0
+
+  return {
+    totalSessions,
+    activeSessions,
+    totalMembers: activeMembers,
+    pendingRequests,
+    totalQuestions,
+    totalResponses,
+    averageAccuracy
+  }
+}

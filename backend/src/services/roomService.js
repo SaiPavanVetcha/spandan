@@ -5,11 +5,12 @@ import Response from '../models/Response.js'
 import Transcript from '../models/Transcript.js'
 import { invalidateRoomLive } from './roomLiveCache.js'
 
-export const createRoom = async (name, teacherId, settings = {}) => {
+export const createRoom = async (name, teacherId, settings = {}, classId = null) => {
   const room = new Room({
     name,
     teacher: teacherId,
-    settings
+    settings,
+    classId: classId || null
   })
 
   await room.save()
@@ -17,7 +18,7 @@ export const createRoom = async (name, teacherId, settings = {}) => {
 }
 
 export const getRoomById = async (id) => {
-  const room = await Room.findById(id).populate('teacher', 'name')
+  const room = await Room.findById(id).populate('teacher', 'name').populate('classId', 'name code')
   if (!room) {
     throw new Error('Room not found')
   }

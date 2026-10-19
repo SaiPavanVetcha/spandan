@@ -244,7 +244,14 @@ function RoomResultsPage() {
         }}>
           {/* Back Button */}
           <button
-            onClick={() => navigate(`/${user?.role === 'teacher' ? 'teacher' : 'student'}/room-history`)}
+            onClick={() => {
+              const classId = room?.classId?._id || room?.classId
+              if (classId) {
+                navigate(`/${user?.role === 'teacher' ? 'teacher' : 'student'}/classes/${classId}`)
+              } else {
+                navigate(`/${user?.role === 'teacher' ? 'teacher' : 'student'}/room-history`)
+              }
+            }}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -261,7 +268,7 @@ function RoomResultsPage() {
               marginBottom: '24px'
             }}
           >
-            <Ico as={ArrowLeft} /> Back
+            <Ico as={ArrowLeft} /> {room?.classId ? 'Back to Class' : 'Back'}
           </button>
 
           {/* Fallback overview stats (insights unavailable) */}

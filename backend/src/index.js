@@ -26,6 +26,7 @@ import transcriptRoutes from './routes/transcripts.js'
 import responseRoutes from './routes/responses.js'
 import researchRoutes from './routes/research.js'
 import adminRoutes from './routes/admin.js'
+import classRoutes from './routes/classes.js'
 
 // Import models for reference
 import './models/index.js'
@@ -391,6 +392,7 @@ app.use('/api/transcripts', transcriptRoutes)
 app.use('/api/responses', responseRoutes)
 app.use('/api/research', researchRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/classes', classRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -418,6 +420,7 @@ async function authenticateSocket(socket, token) {
   socket.data.role = u?.role || null
   socket.data.tokenExp = decoded.exp || null // seconds since epoch; used to enforce freshness below
   connectedUsers.set(socket.id, decoded.userId)
+  socket.join('user:' + decoded.userId)
   return socket.data
 }
 
@@ -607,10 +610,38 @@ io.on('connection', (socket) => {
       if (vp) socket.emit('video:progress', { time: vp.time, playing: vp.playing })
       // If the teacher's question popup is currently open, a late-joining student must start paused.
       if (videoPaused.get(roomCode)) socket.emit('video:pause')
+
+      // Late-join recovery: if an active question is running and student has not answered it yet, surface it
+      if (role === 'student' && room.currentQuestion) {
+        try {
+          const Question = (await import('./models/Question.js')).default
+          const Response = (await import('./models/Response.js')).default
+          const q = await Question.findById(room.currentQuestion).lean()
+          if (q && (!q.closeAt || new Date(q.closeAt) > new Date())) {
+            const alreadyAnswered = await Response.findOne({ questionId: q._id, studentId: userId })
+            if (!alreadyAnswered) {
+              socket.emit('question:started', {
+                questionId: q._id,
+                question: sanitizeQuestionForStudents(q),
+                timer: q.timeToAnswer || 30,
+                startTime: Date.now()
+              })
+            }
+          }
+        } catch { /* non-fatal */ }
+      }
     } catch (error) {
       console.error('Error in room:join:', error)
       socket.emit('room:error', { error: 'Failed to join room' })
     }
+  })
+
+  // Class subscriptions for real-time class room events
+  socket.on('class:join', ({ classId }) => {
+    if (classId) socket.join('class:' + classId)
+  })
+  socket.on('class:leave', ({ classId }) => {
+    if (classId) socket.leave('class:' + classId)
   })
 
   // Leave room — identity from the authenticated socket.

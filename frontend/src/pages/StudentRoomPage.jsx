@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useSocketStore from '../stores/socketStore'
@@ -103,41 +103,42 @@ function StudentRoomPage() {
 
 
 
+  const handleQuestionStarted = useCallback((data) => {
+    if (!data) return
+    setCurrentQuestion(data)
+    setSelectedOptions([])
+    setSubmitted(false)
+    setTimeLeft(data.timer || 30)
+    
+    if (data.question && data.question.timeToAnswer) {
+      setTimeLeft(data.question.timeToAnswer)
+    }
+    
+    // Clear any existing timer
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current)
+      timerIntervalRef.current = null
+    }
+    
+    timerIntervalRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerIntervalRef.current)
+          timerIntervalRef.current = null
+          // Time expired - refresh from MongoDB only if room/user available
+          if (room?._id && user?._id) {
+            fetchPastResponses(room._id, user._id)
+          }
+          setCurrentQuestion(null)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+  }, [room?._id, user?._id])
+
   useEffect(() => {
     if (!socket) return
-
-    const handleQuestionStarted = (data) => {
-      setCurrentQuestion(data)
-      setSelectedOptions([])
-      setSubmitted(false)
-      setTimeLeft(data.timer || 30)
-      
-      if (data.question && data.question.timeToAnswer) {
-        setTimeLeft(data.question.timeToAnswer)
-      }
-      
-      // Clear any existing timer
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current)
-        timerIntervalRef.current = null
-      }
-      
-      timerIntervalRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(timerIntervalRef.current)
-            timerIntervalRef.current = null
-            // Time expired - refresh from MongoDB only if room/user available
-            if (room?._id && user?._id) {
-              fetchPastResponses(room._id, user._id)
-            }
-            setCurrentQuestion(null)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-    }
 
     const handleQuestionEnded = (data) => {
       // Clear timer if running
@@ -244,6 +245,9 @@ function StudentRoomPage() {
     try {
       const roomData = await joinRoomByCode(roomCode)
       setRoom(roomData)
+      if (roomData?.activeQuestion) {
+        handleQuestionStarted(roomData.activeQuestion)
+      }
       if (user?._id && socket) {
         // Join via socket - room:joined confirms the student was added to RoomMember
         return new Promise((resolve, reject) => {

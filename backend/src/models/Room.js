@@ -16,6 +16,11 @@ const roomSchema = new mongoose.Schema({
     type: String,
     unique: true
   },
+  classId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Class',
+    default: null
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -86,6 +91,7 @@ roomSchema.statics.findByCode = function(code) {
 
 // Teacher dashboards and access checks query rooms by teacher; index avoids a COLLSCAN.
 roomSchema.index({ teacher: 1, createdAt: -1 })
+roomSchema.index({ classId: 1, createdAt: -1 })
 
 const Room = mongoose.model('Room', roomSchema)
 

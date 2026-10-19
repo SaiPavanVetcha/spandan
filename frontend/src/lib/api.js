@@ -88,4 +88,17 @@ export const questionApi = {
   getResults: (id) => api.get(`/questions/${id}/results`)
 }
 
+export const classApi = {
+  create: (name, settings) => api.post('/classes', { name, settings }),
+  getAll: () => api.get('/classes'),
+  getById: (id) => api.get(`/classes/${id}`),
+  join: (code) => api.post('/classes/join', { code }),
+  getSessions: (id) => api.get(`/classes/${id}/sessions`),
+  createSession: (id, data) => api.post(`/classes/${id}/sessions`, data),
+  getStats: (id) => api.get(`/classes/${id}/stats`),
+  getMembers: (id) => api.get(`/classes/${id}/members`),
+  getMemberPerformance: (id, studentId) => api.get(`/classes/${id}/members/${studentId}/performance`),
+  updateMember: (id, studentId, action) => api.patch(`/classes/${id}/members/${studentId}`, { action })
+}
+
 export default api

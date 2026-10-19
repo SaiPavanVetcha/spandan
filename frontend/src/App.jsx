@@ -20,6 +20,10 @@ import ProfilePage from './pages/ProfilePage'
 import HelpModal from './components/HelpModal'
 import Tour from './components/Tour'
 import AdminPage from './pages/AdminPage'
+import TeacherClassesPage from './pages/TeacherClassesPage'
+import TeacherClassDetailPage from './pages/TeacherClassDetailPage'
+import StudentClassesPage from './pages/StudentClassesPage'
+import StudentClassDetailPage from './pages/StudentClassDetailPage'
 import { isTokenExpired } from './lib/jwt.js'
 
 function App() {
@@ -78,6 +82,16 @@ function App() {
             <DashboardPage />
           </ProtectedRoute>
         } />
+        <Route path="/teacher/classes" element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <TeacherClassesPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/teacher/classes/:id" element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <TeacherClassDetailPage />
+          </ProtectedRoute>
+        } />
         <Route path="/teacher/create-room" element={
           <ProtectedRoute allowedRoles={['teacher']}>
             <CreateRoomPage />
@@ -120,6 +134,16 @@ function App() {
         <Route path="/student" element={
           <ProtectedRoute allowedRoles={['student']}>
             <StudentDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/student/classes" element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <StudentClassesPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/student/classes/:id" element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <StudentClassDetailPage />
           </ProtectedRoute>
         } />
         <Route path="/student/join-room" element={

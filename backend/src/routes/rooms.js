@@ -99,8 +99,35 @@ router.get('/join/:code', authenticate, authorize('student'), async (req, res) =
       { roomId: room._id, studentId: req.user._id, joinedAt: new Date() },
       { upsert: true, new: true }
     )
+
+    // Late-join recovery: check if there is an active question student hasn't answered
+    let activeQuestion = null
+    if (room.currentQuestion) {
+      try {
+        const Question = (await import('../models/Question.js')).default
+        const Response = (await import('../models/Response.js')).default
+        const q = await Question.findById(room.currentQuestion).lean()
+        if (q && (!q.closeAt || new Date(q.closeAt) > new Date())) {
+          const alreadyAnswered = await Response.findOne({ questionId: q._id, studentId: req.user._id })
+          if (!alreadyAnswered) {
+            const { explanation, ...rest } = q
+            if (Array.isArray(rest.options)) {
+              rest.options = rest.options.map(o =>
+                (o && typeof o === 'object') ? (({ isCorrect, ...opt }) => opt)(o) : o
+              )
+            }
+            activeQuestion = {
+              questionId: q._id,
+              question: rest,
+              timer: q.timeToAnswer || 30,
+              startTime: Date.now()
+            }
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
     
-    res.json({ room })
+    res.json({ room, activeQuestion })
   } catch (error) {
     const status = error.message === 'Room not found' ? 404 : 500
     res.status(status).json({ error: error.message })
@@ -147,6 +174,9 @@ router.put('/:id', authenticate, authorize('teacher'), requireApprovedTeacher, v
     if (req.body.isActive === false && updatedRoom.endedAt) {
       const io = req.app.get('io')
       io.to(room.code).emit('room:ended', { roomId: room._id, endedAt: updatedRoom.endedAt })
+      if (updatedRoom.classId) {
+        io.emit('class:updated', { classId: updatedRoom.classId, hasActiveSession: false, endedRoomId: room._id })
+      }
       // Force a final leaderboard recompute+broadcast so the settled board is complete — the live
       // board is otherwise deferred to the quiet-debounce window and may not have fired yet.
       req.app.get('liveUpdates')?.refreshLeaderboardNow(room._id)

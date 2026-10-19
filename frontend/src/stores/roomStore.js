@@ -180,7 +180,7 @@ export const useRoomStore = create((set, get) => ({
       }
 
       set({ currentRoom: data.room, isLoading: false })
-      return data.room
+      return { ...data.room, activeQuestion: data.activeQuestion }
     } catch (error) {
       set({ error: error.message, isLoading: false })
       throw error
