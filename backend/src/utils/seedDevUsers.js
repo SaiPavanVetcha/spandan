@@ -9,7 +9,6 @@ const __dirname = path.dirname(__filename);
 
 // Script is at: backend/src/utils/seedDevUsers.js
 // .env is at:   backend/.env
-// So go up two levels: ../../.env
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 import User from '../models/User.js';
@@ -31,40 +30,64 @@ async function seedDevUsers() {
 
     const hashedPassword = await hash('Password123!', BCRYPT_COST);
 
-    const teacherData = {
-      name: 'Faculty Member',
-      email: 'teacher@spandan.edu',
-      password: hashedPassword,
-      role: 'teacher',
-      teacherApprovalStatus: 'approved',
-      isAdmin: true,
-      authProvider: 'local',
-    };
+    const devUsers = [
+      {
+        name: 'Faculty Member',
+        email: 'teacher@spandan.edu',
+        password: hashedPassword,
+        role: 'teacher',
+        teacherApprovalStatus: 'approved',
+        isAdmin: true,
+        authProvider: 'local',
+      },
+      {
+        name: 'Student Member',
+        email: 'student@spandan.edu',
+        password: hashedPassword,
+        role: 'student',
+        teacherApprovalStatus: 'approved',
+        isAdmin: false,
+        authProvider: 'local',
+      },
+      {
+        name: 'Student One',
+        email: 'student1@spandan.edu',
+        password: hashedPassword,
+        role: 'student',
+        teacherApprovalStatus: 'approved',
+        isAdmin: false,
+        authProvider: 'local',
+      },
+      {
+        name: 'Student Two',
+        email: 'student2@spandan.edu',
+        password: hashedPassword,
+        role: 'student',
+        teacherApprovalStatus: 'approved',
+        isAdmin: false,
+        authProvider: 'local',
+      },
+      {
+        name: 'Student Three',
+        email: 'student3@spandan.edu',
+        password: hashedPassword,
+        role: 'student',
+        teacherApprovalStatus: 'approved',
+        isAdmin: false,
+        authProvider: 'local',
+      },
+    ];
 
-    const studentData = {
-      name: 'Student Member',
-      email: 'student@spandan.edu',
-      password: hashedPassword,
-      role: 'student',
-      teacherApprovalStatus: 'approved',
-      isAdmin: false,
-      authProvider: 'local',
-    };
+    for (const userData of devUsers) {
+      await User.findOneAndUpdate(
+        { email: userData.email }, // Matches uniquely by email to prevent duplicates
+        { $set: userData },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    }
 
-    await User.findOneAndUpdate(
-      { email: teacherData.email },
-      { $set: teacherData },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    await User.findOneAndUpdate(
-      { email: studentData.email },
-      { $set: studentData },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    console.log('🎉 Seeded teacher@spandan.edu and student@spandan.edu');
-    console.log('   Password for both: Password123!');
+    console.log('🎉 Seeded teacher, student, student1, student2, and student3 cleanly (no duplicates).');
+    console.log('   Password for all accounts: Password123!');
     process.exit(0);
   } catch (error) {
     console.error('❌ Seeding error:', error);
