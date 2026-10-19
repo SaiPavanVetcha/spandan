@@ -36,6 +36,15 @@ export const api = {
     return this.handleResponse(response)
   },
 
+  async patch(endpoint, data) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    })
+    return this.handleResponse(response)
+  },
+
   async delete(endpoint) {
     const response = await fetch(`${API_URL}${endpoint}`, {
       method: 'DELETE',
