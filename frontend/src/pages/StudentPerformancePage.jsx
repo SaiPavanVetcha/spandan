@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import Sidebar from '../components/Sidebar'
@@ -13,49 +13,231 @@ const formatDate = (date) => {
 }
 
 const formatRank = (rank) => rank == null ? '—' : `#${rank}`
-const signed = (value, suffix = '') => value == null ? '—' : `${value > 0 ? '+' : ''}${value}${suffix}`
 
-function TrendLine({ points, invert = false, unit = '%' }) {
-  if (!points?.length) {
-    return <div style={{ minHeight: 180, display: 'grid', placeItems: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>Complete a session to start your journey.</div>
+function getSessionLabel(point, index, maxLength = 10) {
+  const name = String(point?.name || `Session ${index + 1}`)
+  return name.length > maxLength ? `${name.slice(0, maxLength - 1)}…` : name
+}
+
+
+function TrendLine({ points, unit = '%', yLabel = 'Score (%)' }) {
+  const cleanPoints = (points || []).filter(point => Number.isFinite(Number(point.value)))
+  if (!cleanPoints.length) {
+    return <div style={{ minHeight: 280, display: 'grid', placeItems: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>Complete a session to start your journey.</div>
   }
 
-  const width = 760
-  const height = 210
-  const padX = 18
-  const padY = 20
-  const raw = points.map(p => Number(p.value) || 0)
-  const min = Math.min(...raw)
-  const max = Math.max(...raw)
-  const range = Math.max(max - min, 1)
-  const yFor = (value) => {
-    const normalized = (value - min) / range
-    return invert
-      ? padY + normalized * (height - padY * 2)
-      : height - padY - normalized * (height - padY * 2)
-  }
-  const xFor = (index) => padX + (index / Math.max(points.length - 1, 1)) * (width - padX * 2)
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(Number(p.value) || 0).toFixed(1)}`).join(' ')
-  const area = `${path} L ${xFor(points.length - 1).toFixed(1)} ${height - padY} L ${xFor(0).toFixed(1)} ${height - padY} Z`
-  const latest = points[points.length - 1]
+  // The score journey stays a line chart; all completed session names and axis labels are drawn inside the chart.
+  const width = Math.max(600, cleanPoints.length * 40 + 80)
+  const height = 300
+  const left = 66
+  const right = 18
+  const top = 20
+  const bottom = 68
+  const plotWidth = width - left - right
+  const plotHeight = height - top - bottom
+  const xAt = index => left + (index / Math.max(cleanPoints.length - 1, 1)) * plotWidth
+  const yAt = value => top + (100 - Math.max(0, Math.min(100, Number(value) || 0))) / 100 * plotHeight
+  const path = cleanPoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${xAt(index).toFixed(1)} ${yAt(point.value).toFixed(1)}`).join(' ')
+  const area = `${path} L ${xAt(cleanPoints.length - 1).toFixed(1)} ${top + plotHeight} L ${xAt(0).toFixed(1)} ${top + plotHeight} Z`
 
   return (
-    <div>
-      <div style={{ position: 'relative', overflowX: 'auto' }}>
-        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Performance trend" style={{ width: '100%', minWidth: 520, height: 210, display: 'block' }}>
-          <path d={area} fill="currentColor" opacity="0.07" />
-          <path className="trend-line" pathLength="1" d={path} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          {points.map((p, i) => (
-            <circle className="trend-point" key={`${p.date}-${i}`} cx={xFor(i)} cy={yFor(Number(p.value) || 0)} r="4.5" fill="var(--bg-card)" stroke="currentColor" strokeWidth="3" />
-          ))}
-        </svg>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, color: 'var(--text-secondary)', fontSize: 12 }}>
-        <span>{formatDate(points[0].date)}</span>
-        <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{latest.value}{unit}</span>
-        <span>{formatDate(points[points.length - 1].date)}</span>
-      </div>
+    <div style={{ minWidth: 0, overflowX: 'auto' }}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${yLabel} by session`} style={{ width: '100%', minWidth: width, height, display: 'block' }}>
+        {[0, 20, 40, 60, 80, 100].map(tick => {
+          const y = yAt(tick)
+          return <g key={tick}>
+            <line x1={left} y1={y} x2={width - right} y2={y} stroke="var(--border-color)" strokeDasharray="4 5" />
+            <text x={left - 12} y={y + 4} textAnchor="end" fontSize="12" fill="var(--text-secondary)">{tick}</text>
+          </g>
+        })}
+        <path d={area} fill="#3b82f6" opacity="0.12" />
+        <path className="trend-line" pathLength="1" d={path} fill="none" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        {cleanPoints.map((point, index) => (
+          <g key={`${point.roomId || point.date || point.name}-${index}`}>
+            <circle className="trend-point" cx={xAt(index)} cy={yAt(point.value)} r="5" fill="var(--bg-card)" stroke="#2563eb" strokeWidth="3">
+              <title>{`${point.name || `Session ${index + 1}`}: ${point.value}${unit}`}</title>
+            </circle>
+            <text x={xAt(index)} y={top + plotHeight + 22} textAnchor="middle" fontSize="11" fill="var(--text-secondary)">{getSessionLabel(point, index, 10)}</text>
+          </g>
+        ))}
+        <line x1={left} y1={top} x2={left} y2={top + plotHeight} stroke="var(--border-color)" />
+        <line x1={left} y1={top + plotHeight} x2={width - right} y2={top + plotHeight} stroke="var(--border-color)" />
+        <text x="18" y={top + plotHeight / 2} transform={`rotate(-90 18 ${top + plotHeight / 2})`} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-secondary)">{yLabel}</text>
+        <text x={left + plotWidth / 2} y={height - 9} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-secondary)">Session name</text>
+      </svg>
     </div>
+  )
+}
+
+function AccuracyBarChart({ points }) {
+  const cleanPoints = (points || []).filter(point => Number.isFinite(Number(point.value)))
+  if (!cleanPoints.length) {
+    return <div style={{ minHeight: 280, display: 'grid', placeItems: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>Accuracy data will appear after a completed session.</div>
+  }
+  const width = Math.max(720, cleanPoints.length * 68 + 100)
+  const height = 320
+  const left = 64
+  const right = 22
+  const top = 22
+  const bottom = 72
+  const plotWidth = width - left - right
+  const plotHeight = height - top - bottom
+  const average = cleanPoints.reduce((sum, point) => sum + Number(point.value), 0) / cleanPoints.length
+  const xAt = index => left + ((index + 0.5) / cleanPoints.length) * plotWidth
+  const yAt = value => top + (100 - Math.max(0, Math.min(100, Number(value) || 0))) / 100 * plotHeight
+  return (
+    <div style={{ overflowX: 'auto', minWidth: 0 }}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Accuracy percentage by session, shown as bars with an average accuracy line" style={{ width: '100%', minWidth: width, height, display: 'block' }}>
+        {[0, 20, 40, 60, 80, 100].map(tick => {
+          const y = yAt(tick)
+          return <g key={tick}>
+            <line x1={left} y1={y} x2={width - right} y2={y} stroke="var(--border-color)" strokeDasharray="4 5" />
+            <text x={left - 10} y={y + 4} textAnchor="end" fontSize="12" fill="var(--text-secondary)">{tick}</text>
+          </g>
+        })}
+        {cleanPoints.map((point, index) => {
+          const value = Math.max(0, Math.min(100, Number(point.value) || 0))
+          const barWidth = Math.min(42, (plotWidth / cleanPoints.length) * 0.58)
+          const y = yAt(value)
+          return <g key={`${point.roomId || point.date || point.name}-${index}`}>
+            <rect x={xAt(index) - barWidth / 2} y={y} width={barWidth} height={top + plotHeight - y} rx="5" fill="#8b5cf6" opacity="0.88">
+              <title>{`${point.name || `Session ${index + 1}`}: ${value}% accuracy`}</title>
+            </rect>
+            <text x={xAt(index)} y={top + plotHeight + 22} textAnchor="middle" fontSize="11" fill="var(--text-secondary)">{getSessionLabel(point, index, 9)}</text>
+          </g>
+        })}
+        <line x1={left} y1={yAt(average)} x2={width - right} y2={yAt(average)} stroke="#6d28d9" strokeWidth="2.5" strokeDasharray="7 5" />
+        <text x={width - right - 3} y={Math.max(14, yAt(average) - 9)} textAnchor="end" fontSize="12" fontWeight="800" fill="#6d28d9">Average {Math.round(average)}%</text>
+        <line x1={left} y1={top} x2={left} y2={top + plotHeight} stroke="var(--border-color)" />
+        <line x1={left} y1={top + plotHeight} x2={width - right} y2={top + plotHeight} stroke="var(--border-color)" />
+        <text x="17" y={top + plotHeight / 2} transform={`rotate(-90 17 ${top + plotHeight / 2})`} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-secondary)">Accuracy (%)</text>
+        <text x={left + plotWidth / 2} y={height - 9} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-secondary)">Session name</text>
+      </svg>
+    </div>
+  )
+}
+
+function RankJourneyChart({ points }) {
+  const cleanPoints = (points || []).filter(point => Number.isFinite(Number(point.value)) && Number(point.value) > 0)
+  if (!cleanPoints.length) {
+    return <div style={{ minHeight: 280, display: 'grid', placeItems: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>Rank data will appear when session rankings are available.</div>
+  }
+  const width = Math.max(720, cleanPoints.length * 68 + 100)
+  const height = 320
+  const left = 64
+  const right = 22
+  const top = 22
+  const bottom = 72
+  const plotWidth = width - left - right
+  const plotHeight = height - top - bottom
+  const highestRank = Math.max(1, ...cleanPoints.map(point => Number(point.value)))
+  const axisMax = Math.max(5, Math.ceil(highestRank / 5) * 5)
+  const yAt = value => top + ((Math.max(1, Math.min(axisMax, Number(value) || 1)) - 1) / Math.max(axisMax - 1, 1)) * plotHeight
+  const xAt = index => left + ((index + 0.5) / cleanPoints.length) * plotWidth
+  const tickValues = Array.from({ length: 6 }, (_, index) => Math.round(1 + ((axisMax - 1) / 5) * index))
+  let stepPath = ''
+  cleanPoints.forEach((point, index) => {
+    const x = xAt(index)
+    const y = yAt(point.value)
+    if (index === 0) stepPath = `M ${x} ${y}`
+    else stepPath += ` H ${x} V ${y}`
+  })
+  const areaPath = `${stepPath} L ${xAt(cleanPoints.length - 1)} ${top + plotHeight} L ${xAt(0)} ${top + plotHeight} Z`
+  return (
+    <div style={{ overflowX: 'auto', minWidth: 0 }}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Rank by session. A lower rank number means a better position." style={{ width: '100%', minWidth: width, height, display: 'block' }}>
+        {tickValues.map((tick, index) => {
+          const y = yAt(tick)
+          return <g key={`${tick}-${index}`}>
+            <line x1={left} y1={y} x2={width - right} y2={y} stroke="var(--border-color)" strokeDasharray="4 5" />
+            <text x={left - 10} y={y + 4} textAnchor="end" fontSize="12" fill="var(--text-secondary)">{tick}</text>
+          </g>
+        })}
+        <path d={areaPath} fill="#f97316" opacity="0.10" />
+        <path d={stepPath} fill="none" stroke="#ea580c" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="7 4" />
+        {cleanPoints.map((point, index) => (
+          <g key={`${point.roomId || point.date || point.name}-${index}`}>
+            <circle cx={xAt(index)} cy={yAt(point.value)} r="5.5" fill="#f97316" stroke="var(--bg-card)" strokeWidth="2.5">
+              <title>{`${point.name || `Session ${index + 1}`}: rank ${point.value} (lower is better)`}</title>
+            </circle>
+            <text x={xAt(index)} y={top + plotHeight + 22} textAnchor="middle" fontSize="11" fill="var(--text-secondary)">{getSessionLabel(point, index, 9)}</text>
+          </g>
+        ))}
+        <line x1={left} y1={top} x2={left} y2={top + plotHeight} stroke="var(--border-color)" />
+        <line x1={left} y1={top + plotHeight} x2={width - right} y2={top + plotHeight} stroke="var(--border-color)" />
+        <text x="17" y={top + plotHeight / 2} transform={`rotate(-90 17 ${top + plotHeight / 2})`} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-secondary)">Rank (lower is better)</text>
+        <text x={left + plotWidth / 2} y={height - 9} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-secondary)">Session name</text>
+      </svg>
+    </div>
+  )
+}
+
+function getAttendanceActivity(history) {
+  const sessionsByDay = new Map()
+  for (const session of (history || []).filter(item => item.attended && item.date)) {
+    const date = new Date(session.date)
+    if (Number.isNaN(date.getTime())) continue
+    date.setHours(0, 0, 0, 0)
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    sessionsByDay.set(key, (sessionsByDay.get(key) || 0) + 1)
+  }
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const days = []
+  for (let offset = 27; offset >= 0; offset--) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - offset)
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const count = sessionsByDay.get(key) || 0
+    days.push({ date, count, key, level: count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : 3 })
+  }
+  let longestStreak = 0
+  let streak = 0
+  for (const day of days) {
+    streak = day.count ? streak + 1 : 0
+    longestStreak = Math.max(longestStreak, streak)
+  }
+  let currentStreak = 0
+  let index = days.length - 1
+  // Keep a streak alive through today if the last attendance was yesterday.
+  if (index >= 0 && days[index].count === 0) index -= 1
+  while (index >= 0 && days[index].count > 0) {
+    currentStreak += 1
+    index -= 1
+  }
+  const activeDays = days.filter(day => day.count > 0).length
+  return { days, currentStreak, longestStreak, activeDays }
+}
+
+function AttendanceStreak({ history, isMobile }) {
+  const activity = getAttendanceActivity(history)
+  const cellColors = ['var(--bg-secondary, #eef2f7)', '#d9f99d', '#86efac', '#16a34a']
+  return (
+    <section className="chart-card attendance-streak" style={{ padding: isMobile ? 16 : 22, marginBottom: 18, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22 }} aria-label="Session attendance streak">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 180 }}>
+          <div style={{ width: 54, height: 54, display: 'grid', placeItems: 'center', borderRadius: 17, background: 'linear-gradient(135deg, rgba(249,115,22,.16), rgba(234,88,12,.06))', fontSize: 30 }} aria-hidden="true">🔥</div>
+          <div>
+            <div style={{ color: 'var(--text-primary)', fontSize: 15, fontWeight: 800 }}>Session Streak</div>
+            <div style={{ color: '#ea580c', fontSize: 25, lineHeight: 1.2, fontWeight: 900, letterSpacing: '-0.03em' }}>{activity.currentStreak} {activity.currentStreak === 1 ? 'day' : 'days'}</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginTop: 3 }}>{activity.currentStreak ? 'Great consistency—keep your streak going!' : 'Attend sessions regularly to start building your streak.'}</div>
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 11, fontWeight: 700, marginBottom: 8 }}>Your activity over the last 28 days</div>
+          <div className="streak-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(28, minmax(5px, 1fr))', gap: 4, alignItems: 'center' }}>
+            {activity.days.map(day => (
+              <span key={day.key} title={`${formatDate(day.date)}: ${day.count} attended ${day.count === 1 ? 'session' : 'sessions'}`} aria-label={`${formatDate(day.date)}: ${day.count} sessions`} style={{ display: 'block', aspectRatio: '1', minWidth: 5, borderRadius: 3, background: cellColors[day.level], outline: day.count ? '1px solid rgba(22,163,74,.12)' : '1px solid var(--border-color)' }} />
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: 'var(--text-secondary)', fontSize: 10, marginTop: 6 }}><span>28 days ago</span><span>Today</span></div>
+        </div>
+        <div style={{ display: 'flex', gap: 22, alignItems: 'center', paddingLeft: isMobile ? 0 : 18, borderLeft: isMobile ? 'none' : '1px solid var(--border-color)' }}>
+          <div><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Longest in 28 days</div><strong style={{ display: 'block', color: 'var(--text-primary)', fontSize: 21, marginTop: 4 }}>{activity.longestStreak} days</strong></div>
+          <div><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Active days</div><strong style={{ display: 'block', color: 'var(--text-primary)', fontSize: 21, marginTop: 4 }}>{activity.activeDays}/28</strong></div>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -76,6 +258,100 @@ function PerformanceMetric({ label, value, caption, icon }) {
       <div style={{ marginTop: 10, fontSize: 30, lineHeight: 1.1, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>{value}</div>
       <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-secondary)' }}>{caption}</div>
     </div>
+  )
+}
+
+function NextAccuracyMilestone({ history, isMobile }) {
+  const attended = (history || []).filter(session => session?.attended)
+  const previousSessions = attended.slice(-6, -3)
+  const recentSessions = attended.slice(-3)
+
+  const calculateAccuracy = (sessions) => {
+    const attempted = sessions.reduce((total, session) => total + (Number(session.attemptedQuestions) || 0), 0)
+    const correct = sessions.reduce((total, session) => total + (Number(session.correctAnswers) || 0), 0)
+    return attempted > 0 ? Math.round((correct / attempted) * 100) : null
+  }
+
+  const baselineAccuracy = calculateAccuracy(previousSessions)
+  const recentAccuracy = calculateAccuracy(recentSessions)
+
+  if (recentAccuracy == null) {
+    return (
+      <section className="chart-card" style={{ padding: isMobile ? 16 : 22, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, boxShadow: 'var(--shadow-md)', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }} aria-label="Next accuracy milestone">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <span aria-hidden="true" style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 13, display: 'grid', placeItems: 'center', background: 'rgba(22,163,74,.10)', fontSize: 22 }}>🎯</span>
+          <div><h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Next Accuracy Milestone</h2><p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: 12 }}>A goal based on your real session results</p></div>
+        </div>
+        <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6 }}>Your accuracy goal will appear after you answer questions in a completed live session.</p>
+      </section>
+    )
+  }
+
+  const hasComparison = baselineAccuracy != null
+  const targetBase = hasComparison ? baselineAccuracy : recentAccuracy
+  const targetAccuracy = Math.min(100, targetBase + 5)
+  const goalRange = targetAccuracy - targetBase
+  const progress = hasComparison
+    ? (goalRange <= 0
+        ? (recentAccuracy >= targetAccuracy ? 100 : 0)
+        : Math.max(0, Math.min(100, Math.round(((recentAccuracy - targetBase) / goalRange) * 100))))
+    : null
+  const goalReached = hasComparison && recentAccuracy >= targetAccuracy
+  const difference = recentAccuracy - (baselineAccuracy ?? recentAccuracy)
+
+  return (
+    <section className="chart-card" style={{ padding: isMobile ? 16 : 22, background: 'linear-gradient(145deg, rgba(22,163,74,.07), var(--bg-card) 66%)', border: '1px solid var(--border-color)', borderRadius: 22, boxShadow: 'var(--shadow-md)', minWidth: 0, display: 'flex', flexDirection: 'column' }} aria-label="Next accuracy milestone">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <span aria-hidden="true" style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 13, display: 'grid', placeItems: 'center', background: 'rgba(22,163,74,.12)', fontSize: 22 }}>🎯</span>
+        <div>
+          <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Next Accuracy Milestone</h2>
+          <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: 12 }}>A personal target calculated from session data</p>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+        <div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 4 }}>Next target</div>
+          <div style={{ color: '#15803d', fontSize: 38, lineHeight: 1, fontWeight: 900, letterSpacing: '-0.04em' }}>{targetAccuracy}%</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 4 }}>Recent accuracy</div>
+          <div style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 850 }}>{recentAccuracy}%</div>
+        </div>
+      </div>
+
+      {hasComparison ? (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Progress toward target</span>
+            <strong style={{ color: goalReached ? '#15803d' : 'var(--text-primary)', fontSize: 12 }}>{goalReached ? 'Goal reached 🎉' : `${progress}%`}</strong>
+          </div>
+          <div role="progressbar" aria-label="Progress toward next accuracy milestone" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} style={{ height: 10, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-secondary, #e5e7eb)' }}>
+            <div style={{ height: '100%', width: `${progress}%`, borderRadius: 999, background: goalReached ? '#16a34a' : 'linear-gradient(90deg, #22c55e, #0d9488)', transition: 'width .3s ease' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 8, color: 'var(--text-secondary)', fontSize: 11 }}>
+            <span>Baseline: {baselineAccuracy}%</span>
+            <span>Target: {targetAccuracy}%</span>
+          </div>
+          <div style={{ marginTop: 14, borderRadius: 12, padding: 11, background: 'rgba(22,163,74,.08)', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.55 }}>
+            {goalReached
+              ? `You have reached the target based on the previous ${previousSessions.length} attended ${previousSessions.length === 1 ? 'session' : 'sessions'}. Keep up the consistency in your next live sessions.`
+              : difference > 0
+                ? `Your latest ${recentSessions.length} attended sessions are ${difference} percentage point${difference === 1 ? '' : 's'} above the previous baseline. Keep checking each option carefully to reach the target.`
+                : `Aim to improve by up to 5 percentage points from the previous-session baseline. Read each question and its options carefully before submitting.`}
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ height: 10, borderRadius: 999, background: 'var(--bg-secondary, #e5e7eb)', overflow: 'hidden' }}>
+            <div style={{ width: '0%', height: '100%', borderRadius: 999, background: '#16a34a' }} />
+          </div>
+          <div style={{ marginTop: 12, borderRadius: 12, padding: 11, background: 'rgba(22,163,74,.08)', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.55 }}>
+            Your starting accuracy is based on your latest {recentSessions.length} attended {recentSessions.length === 1 ? 'session' : 'sessions'}. The target is set 5 percentage points higher (up to 100%). Complete more sessions to compare against a previous baseline and calculate meaningful progress.
+          </div>
+        </>
+      )}
+    </section>
   )
 }
 
@@ -116,7 +392,7 @@ function buildAnsweringInsights(summary, sessions, questionTypes) {
   if (strongestType && (strongestType.accuracy >= 70 || strongestType.accuracy >= overallAccuracy + 5)) {
     strengths.push({
       title: 'Strong question type',
-      text: `${strongestType.label}: ${strongestType.accuracy}% accuracy across ${strongestType.attempted} attempted questions.`
+      text: `You are doing well with ${strongestType.label} questions. In upcoming live sessions, keep reading each question carefully and use the approach that is working for you.`
     })
   }
 
@@ -124,13 +400,13 @@ function buildAnsweringInsights(summary, sessions, questionTypes) {
   if (overallAccuracy >= 70 && attemptedQuestions >= 5 && strengths.length < 2) {
     strengths.push({
       title: 'Good overall accuracy',
-      text: `You answered ${overallAccuracy}% of ${attemptedQuestions} attempted questions correctly across your sessions.`
+      text: `Your overall answers are going well. Keep reading the full question and checking your choice before submitting in upcoming live sessions.`
     })
   }
   if (missedRate < 5 && totalQuestions >= 10 && strengths.length < 2) {
     strengths.push({
       title: 'Consistent participation',
-      text: `You attempted ${attemptedQuestions} of ${totalQuestions} available questions; only ${missedQuestions} were unanswered.`
+      text: `You have been attempting almost all available questions. Keep participating throughout each live session and submit before the poll closes.`
     })
   }
 
@@ -138,19 +414,19 @@ function buildAnsweringInsights(summary, sessions, questionTypes) {
   if (weakestType && (weakestType.accuracy < 65 || weakestType.accuracy <= overallAccuracy - 10)) {
     improvements.push({
       title: 'Question type to practise',
-      text: `${weakestType.label}: ${weakestType.accuracy}% accuracy across ${weakestType.attempted} attempted questions. Review incorrect answers in this type.`
+      text: `Your ${weakestType.label} answers need more attention. In your next live session, read every option carefully and check all correct choices before submitting.`
     })
   }
   if (totalQuestions > 0 && missedRate >= 10) {
     improvements.push({
       title: 'Unanswered questions',
-      text: `${missedQuestions} of ${totalQuestions} available questions (${Math.round(missedRate)}%) were unanswered across attended sessions.`
+      text: `Some questions were left unanswered. Keep an eye on the poll timer and submit an answer before each live question closes.`
     })
   }
   if (!improvements.length && attemptedQuestions >= 5 && overallAccuracy < 60) {
     improvements.push({
       title: 'Overall accuracy to improve',
-      text: `Overall accuracy is ${overallAccuracy}%. Review incorrect answers from your recent sessions to find recurring gaps.`
+      text: `In your next live session, slow down enough to understand each question and check the available choices before submitting.`
     })
   }
 
@@ -175,18 +451,6 @@ function buildAnsweringInsights(summary, sessions, questionTypes) {
     }
   }
 
-  const responseTimes = sessions.filter(item => Number.isFinite(Number(item.averageResponseTime)) && item.attemptedQuestions > 0)
-  if (keyInsights.length < 2 && responseTimes.length >= 2) {
-    const latest = responseTimes[responseTimes.length - 1]
-    const previous = responseTimes[responseTimes.length - 2]
-    const change = Math.round((Number(latest.averageResponseTime) - Number(previous.averageResponseTime)) * 10) / 10
-    if (Math.abs(change) >= 1) {
-      keyInsights.push({
-        title: change < 0 ? 'Answering faster' : 'Taking more time to answer',
-        text: `Average response time changed from ${previous.averageResponseTime}s to ${latest.averageResponseTime}s. Compare speed with accuracy to understand whether this change is helpful.`
-      })
-    }
-  }
   if (keyInsights.length < 2 && sessions.length >= 2) {
     const latest = sessions[sessions.length - 1]
     const previous = sessions[sessions.length - 2]
@@ -200,14 +464,14 @@ function buildAnsweringInsights(summary, sessions, questionTypes) {
   if (!strengths.length) strengths.push({
     title: 'Strengths still emerging',
     text: validTypes.length
-      ? `Your strongest measured type is ${strongestType.label} at ${strongestType.accuracy}%, but it has not reached the current strength benchmark yet.`
-      : 'Session history is available, but there are not enough question-type attempts to confirm a reliable strength yet.'
+      ? `Keep building confidence with ${strongestType.label} questions. Continue reading the whole question carefully in your next live session.`
+      : 'Complete more live-session questions to reveal the formats where you are most confident.'
   })
   if (!improvements.length) improvements.push({
     title: 'No major concern detected',
     text: validTypes.length || attemptedQuestions >= 5
-      ? 'Current data does not show a question type or unanswered-question rate that crosses the improvement thresholds.'
-      : 'More answered questions are needed to identify a reliable area to improve.'
+      ? 'No clear issue stands out right now. Keep checking each question carefully and continue participating in live sessions.'
+      : 'More answered questions are needed before a useful area to improve can be identified.'
   })
   if (!keyInsights.length) keyInsights.push({
     title: 'More sessions needed for trends',
@@ -219,59 +483,48 @@ function buildAnsweringInsights(summary, sessions, questionTypes) {
 
 function AnsweringPatternSection({ summary, history, answeringPattern, isMobile }) {
   const attended = history.filter(item => item.attended)
-  const recentSessions = attended.slice(-8)
-  const typeLabels = {
-    TF: 'True / False',
-    MCQ: 'Single Answer (MCQ)',
-    MSQ: 'Multiple Select (MSQ)',
-  }
-  const questionTypes = ['TF', 'MCQ', 'MSQ'].map(type => {
-    const existing = (answeringPattern?.questionTypes || []).find(
-      item => String(item.type).toUpperCase() === type
-    )
+  const recentSessions = attended.slice(-5)
+  const typeLabels = { TF: 'True / False', MCQ: 'Single Answer (MCQ)', MSQ: 'Multiple Select (MSQ)' }
+  const shortTypeLabels = { TF: 'True / False', MCQ: 'MCQ', MSQ: 'MSQ' }
+  const questionTypes = ['MCQ', 'MSQ', 'TF'].map(type => {
+    const existing = (answeringPattern?.questionTypes || []).find(item => String(item.type).toUpperCase() === type)
     return {
       type,
       label: typeLabels[type],
+      shortLabel: shortTypeLabels[type],
       attempted: Number(existing?.attempted) || 0,
+      correct: Number(existing?.correct) || 0,
+      incorrect: Number(existing?.incorrect) || Math.max(0, (Number(existing?.attempted) || 0) - (Number(existing?.correct) || 0)),
       accuracy: Number(existing?.accuracy) || 0,
-      available: Boolean(existing && Number(existing.attempted) > 0),
+      available: Boolean(existing && Number(existing.attempted) > 0)
     }
   })
-  const insights = useMemo(
-    () => buildAnsweringInsights(summary, attended, questionTypes),
-    [summary, attended, questionTypes]
-  )
-
+  const insights = buildAnsweringInsights(summary, attended, questionTypes)
   const correct = Number(summary?.correctAnswers) || 0
   const incorrect = Number(summary?.incorrectAnswers) || 0
   const unanswered = Number(summary?.missedQuestions) || 0
-  const total = correct + incorrect + unanswered
-  const percent = (value) => total > 0 ? Math.round((value / total) * 100) : 0
-  const maxQuestions = Math.max(1, ...recentSessions.map(item => Number(item.totalQuestions) || 0))
-  const responseTimeSessions = recentSessions.filter(item => Number.isFinite(item.averageResponseTime))
-  const averageResponseTime = answeringPattern?.averageResponseTime
-
+  const attemptedQuestions = Number(summary?.attemptedQuestions) || 0
+  const totalQuestions = Number(summary?.totalQuestions) || 0
+  const totalAnswers = correct + incorrect + unanswered
+  const percent = value => totalAnswers > 0 ? Math.round((value / totalAnswers) * 100) : 0
+  const averageResponseTime = answeringPattern?.averageResponseTime != null && Number.isFinite(Number(answeringPattern.averageResponseTime))
+    ? Number(answeringPattern.averageResponseTime)
+    : null
   const cardStyle = {
     background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-    borderRadius: 22, padding: isMobile ? 18 : 24, minWidth: 0, boxShadow: 'var(--shadow-md)'
+    borderRadius: 22, padding: isMobile ? 16 : 22, minWidth: 0, boxShadow: 'var(--shadow-md)'
   }
   const miniStatStyle = { borderRadius: 13, padding: 12, background: 'var(--bg-secondary, rgba(127,127,127,0.06))', minWidth: 0 }
   const InsightList = ({ title, icon, color, items }) => (
-    <div className="chart-card insight-list-card" style={cardStyle}>
-      <h3 style={{ margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8, color, fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}><span aria-hidden="true">{icon}</span>{title}</h3>
-      <div style={{ display: 'grid', gap: 8 }}>
+    <div className="chart-card insight-list-card" style={{ ...cardStyle, background: `linear-gradient(145deg, color-mix(in srgb, ${color} 5%, var(--bg-card)), var(--bg-card))` }}>
+      <h3 style={{ margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 8, color, fontSize: 16, fontWeight: 800 }}><span aria-hidden="true">{icon}</span>{title}</h3>
+      <div style={{ display: 'grid', gap: 7 }}>
         {items.map((item, index) => (
-          <div
-            className="insight-item"
-            key={`${item.title}-${index}`}
-            title={`${item.title}: ${item.text}`}
-            tabIndex={0}
-            style={{ display: 'flex', gap: 10, alignItems: 'flex-start', borderRadius: 12, padding: 9, margin: '-2px -9px', outlineOffset: 2 }}
-          >
-            <span style={{ flex: '0 0 24px', height: 24, display: 'grid', placeItems: 'center', borderRadius: 8, background: `${color}18`, color, fontSize: 12, fontWeight: 800 }}>{index + 1}</span>
+          <div className="insight-item" key={`${item.title}-${index}`} title={`${item.title}: ${item.text}`} tabIndex={0} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', borderRadius: 12, padding: 9, margin: '-2px -8px', outlineOffset: 2 }}>
+            <span style={{ flex: '0 0 23px', height: 23, display: 'grid', placeItems: 'center', borderRadius: 8, background: `${color}18`, color, fontSize: 12, fontWeight: 800 }}>{index + 1}</span>
             <div style={{ minWidth: 0 }}>
-              <div style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: 14 }}>{item.title}</div>
-              <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6 }}>{item.text}</p>
+              <div style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: 13 }}>{item.title}</div>
+              <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.55 }}>{item.text}</p>
             </div>
           </div>
         ))}
@@ -280,133 +533,231 @@ function AnsweringPatternSection({ summary, history, answeringPattern, isMobile 
   )
 
   return (
-    <div style={{ marginBottom: 22 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, margin: '30px 0 16px' }}>
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, margin: '24px 0 14px' }}>
         <div>
-          <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: isMobile ? 22 : 26, letterSpacing: '-0.03em' }}>Answering Pattern</h2>
-          <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.5 }}>How you answer questions across your completed sessions.</p>
+          <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: isMobile ? 21 : 25, letterSpacing: '-0.03em' }}>Answering Pattern</h2>
+          <p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>See how you answer questions across your attended live sessions.</p>
         </div>
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Based on {summary?.totalSessions || 0} attended sessions</span>
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Last {Math.min(5, attended.length)} attended sessions shown in the chart</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.85fr 1.15fr', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 16 }}>
         <div className="chart-card" style={cardStyle}>
-          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Overall Answer Distribution</h3>
-          <p style={{ margin: '5px 0 16px', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>Correct, incorrect and unanswered questions.</p>
-          {total === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>No question data is available yet.</p> : <>
-            <div style={{ display: 'flex', height: 12, overflow: 'hidden', borderRadius: 999, background: 'var(--bg-secondary, #e5e7eb)', marginBottom: 16 }} aria-label={`Answer distribution: ${percent(correct)} percent correct, ${percent(incorrect)} percent incorrect, ${percent(unanswered)} percent unanswered`}>
-              <div style={{ width: `${percent(correct)}%`, background: '#16a34a', transition: 'width .3s ease' }} />
-              <div style={{ width: `${percent(incorrect)}%`, background: '#dc2626', transition: 'width .3s ease' }} />
-              <div style={{ width: `${percent(unanswered)}%`, background: '#94a3b8', transition: 'width .3s ease' }} />
+          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 17, fontWeight: 800 }}>Overall Answer Distribution</h3>
+          <p style={{ margin: '5px 0 16px', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5 }}>A circular view of correct, incorrect and unanswered questions across attended sessions.</p>
+          {totalAnswers === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>No question data is available yet.</p> : <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(160px, 0.85fr) minmax(150px, 1fr)', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'grid', placeItems: 'center', minWidth: 0 }}>
+              <svg viewBox="0 0 160 160" role="img" aria-label={`Overall answer distribution: ${correct} correct, ${incorrect} incorrect, ${unanswered} unanswered`} style={{ width: '100%', maxWidth: 190, display: 'block' }}>
+                <circle cx="80" cy="80" r="52" fill="none" stroke="var(--bg-secondary, #e5e7eb)" strokeWidth="17" />
+                <g transform="rotate(-90 80 80)">
+                  {[
+                    { label: 'Correct', value: correct, color: '#16a34a' },
+                    { label: 'Incorrect', value: incorrect, color: '#ef4444' },
+                    { label: 'Unanswered', value: unanswered, color: '#94a3b8' }
+                  ].map((part, index, parts) => {
+                    const circumference = 2 * Math.PI * 52
+                    const length = totalAnswers > 0 ? (part.value / totalAnswers) * circumference : 0
+                    const offset = parts.slice(0, index).reduce((sum, previousPart) => sum + (totalAnswers > 0 ? (previousPart.value / totalAnswers) * circumference : 0), 0)
+                    return <circle key={part.label} cx="80" cy="80" r="52" fill="none" stroke={part.color} strokeWidth="17" strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-offset} strokeLinecap="butt">
+                      <title>{`${part.label}: ${part.value} (${percent(part.value)}%)`}</title>
+                    </circle>
+                  })}
+                </g>
+              </svg>
+              <div style={{ color: 'var(--text-secondary)', fontSize: 11, textAlign: 'center', marginTop: -2 }}>Across all attended sessions</div>
             </div>
-            {[['Correct', correct, '#16a34a'], ['Incorrect', incorrect, '#dc2626'], ['Unanswered', unanswered, '#94a3b8']].map(([label, value, color]) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 10, fontSize: 13 }}>
-                <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 8, height: 8, background: color, borderRadius: '50%' }} />{label}</span>
-                <strong style={{ color: 'var(--text-primary)' }}>{value} <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>({percent(value)}%)</span></strong>
-              </div>
-            ))}
-          </>}
-          <div style={{ ...miniStatStyle, marginTop: 16 }}>
-            <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600 }}>Average response time</div>
-            <div style={{ marginTop: 4, color: 'var(--text-primary)', fontSize: 26, fontWeight: 850, letterSpacing: '-0.03em' }}>{Number.isFinite(averageResponseTime) ? `${averageResponseTime}s` : '—'}</div>
-          </div>
-        </div>
-
-        <div className="chart-card" style={cardStyle}>
-          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Answers per Session</h3>
-          {recentSessions.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Attend a completed session to see this graph.</p> : (() => {
-            const maxCount = Math.max(1, ...recentSessions.map(session =>
-              (Number(session.correctAnswers) || 0) +
-              (Number(session.incorrectAnswers) || 0) +
-              (Number(session.missedQuestions) || 0)
-            ))
-            const axisMax = Math.ceil(maxCount / 5) * 5 || 5
-            const ticks = 5
-            return <>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-                <div aria-label="Y-axis: questions" style={{ width: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', writingMode: 'vertical-rl', transform: 'rotate(180deg)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, letterSpacing: '0.01em' }}>Questions</div>
-                <div style={{ width: 30, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', paddingBottom: 4, color: 'var(--text-secondary)', fontSize: 12, textAlign: 'right' }}>
-                  {Array.from({ length: ticks + 1 }, (_, i) => Math.round(axisMax - (axisMax / ticks) * i)).map((value, i) => <span key={`${value}-${i}`}>{value}</span>)}
+            <div style={{ display: 'grid', gap: 13, minWidth: 0 }}>
+              {[
+                ['Correct', correct, '#16a34a'],
+                ['Incorrect', incorrect, '#ef4444'],
+                ['Unanswered', unanswered, '#94a3b8']
+              ].map(([label, value, color]) => (
+                <div key={label} style={{ padding: '10px 12px', borderRadius: 13, background: 'var(--bg-secondary, rgba(127,127,127,0.06))', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />{label}</span>
+                  <strong style={{ color: 'var(--text-primary)', fontSize: 13, whiteSpace: 'nowrap' }}>{value} <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>({percent(value)}%)</span></strong>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ position: 'relative', height: 180, borderBottom: '1px solid var(--border-color)', borderLeft: '1px solid var(--border-color)', background: `repeating-linear-gradient(to bottom, transparent 0, transparent calc(20% - 1px), var(--border-color) calc(20% - 1px), var(--border-color) 20%)`, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', gap: 8, padding: '0 8px', boxSizing: 'border-box' }}>
-                    {recentSessions.map((session, index) => {
-                      const correct = Number(session.correctAnswers) || 0
-                      const incorrect = Number(session.incorrectAnswers) || 0
-                      const unanswered = Number(session.missedQuestions) || 0
-                      const total = correct + incorrect + unanswered
-                      const height = value => `${(value / axisMax) * 100}%`
-                      return <div key={session.roomId || `${session.name}-${index}`} title={`${session.name}: ${correct} correct, ${incorrect} incorrect, ${unanswered} unanswered; ${total} total questions`} style={{ height: '100%', flex: '1 1 0', minWidth: 0, maxWidth: 64, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }}>
-                        <div style={{ height: `${Math.min(100, (total / axisMax) * 100)}%`, width: 'min(100%, 34px)', minHeight: total > 0 ? 2 : 0, display: 'flex', flexDirection: 'column-reverse', overflow: 'hidden', borderRadius: '5px 5px 0 0', alignSelf: 'center' }}>
-                          <div style={{ height: height(correct), background: '#16a34a' }} />
-                          <div style={{ height: height(incorrect), background: '#dc2626' }} />
-                          <div style={{ height: height(unanswered), background: '#94a3b8' }} />
-                        </div>
-                      </div>
-                    })}
+              ))}
+              <div style={{ marginTop: 2, padding: '12px 13px', borderRadius: 13, border: '1px solid var(--border-color)', background: 'linear-gradient(135deg, rgba(99,102,241,0.09), rgba(6,182,212,0.07))', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                  <span aria-hidden="true" style={{ width: 32, height: 32, flexShrink: 0, display: 'grid', placeItems: 'center', borderRadius: 10, background: 'rgba(99,102,241,0.13)', color: '#6366f1', fontSize: 17 }}>⏱</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 800 }}>Average response time</div>
+                    <div style={{ marginTop: 3, color: 'var(--text-secondary)', fontSize: 10.5 }}>Across all attended sessions</div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${recentSessions.length}, minmax(0, 1fr))`, gap: 8, paddingTop: 8 }}>
-                    {recentSessions.map((session, index) => <div key={session.roomId || `${session.name}-label-${index}`} title={session.name || 'Unnamed session'} style={{ minWidth: 0, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 11, overflowWrap: 'anywhere', lineHeight: 1.4 }}>{session.name || `Session ${index + 1}`}</div>)}
-                  </div>
-                  <div style={{ marginTop: 8, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, letterSpacing: '0.01em' }}>Session</div>
                 </div>
+                <strong style={{ color: 'var(--text-primary)', fontSize: 19, fontWeight: 900, whiteSpace: 'nowrap' }}>{averageResponseTime == null ? '—' : `${averageResponseTime.toFixed(1)}s`}</strong>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
-                {[['Correct', '#16a34a'], ['Incorrect', '#dc2626'], ['Unanswered', '#94a3b8']].map(([label, color]) => <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)', fontSize: 12 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />{label}</span>)}
-              </div>
-            </>
-          })()}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div className="chart-card" style={cardStyle}>
-          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Accuracy by Question Type</h3>
-          <p style={{ margin: '5px 0 16px', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>Calculated from answered questions; low sample sizes are shown but not used for insight thresholds.</p>
-          {questionTypes.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Question-type patterns will appear after you answer questions in completed sessions.</p> : <div style={{ display: 'grid', gap: 16 }}>
-            {questionTypes.map(item => (
-              <div key={item.type}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6, fontSize: 14 }}>
-                  <strong style={{ color: 'var(--text-primary)' }}>{item.label}</strong>
-                  <span style={{ color: 'var(--text-secondary)', textAlign: 'right' }}>{item.available ? `${item.accuracy}% · ${item.attempted} attempted` : 'No data yet'}</span>
-                </div>
-                <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-secondary, #e5e7eb)' }}>
-                  <div style={{ width: `${item.available ? Math.max(0, Math.min(100, item.accuracy)) : 0}%`, height: '100%', borderRadius: 999, background: !item.available ? 'transparent' : item.accuracy >= 75 ? '#16a34a' : item.accuracy >= 60 ? '#d97706' : '#dc2626', transition: 'width .3s ease' }} />
-                </div>
-              </div>
-            ))}
+            </div>
           </div>}
         </div>
 
         <div className="chart-card" style={cardStyle}>
-          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Average Response Time</h3>
-          <p style={{ margin: '5px 0 16px', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>Average time per answered question from the last 8 attended sessions; sessions without response-time data are omitted.</p>
-          {responseTimeSessions.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Response-time data is not available for these sessions.</p> : <div style={{ display: 'grid', gap: 13 }}>
-            {responseTimeSessions.map((session, index) => {
-              const maxTime = Math.max(1, ...responseTimeSessions.map(item => item.averageResponseTime))
-              const width = Math.max(3, (session.averageResponseTime / maxTime) * 100)
-              return (
-                <div key={session.roomId || `${session.name}-${index}`} title={session.name}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 5, fontSize: 13 }}>
-                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.name}</span>
-                    <strong style={{ color: 'var(--text-primary)', fontWeight: 800, flexShrink: 0 }}>{session.averageResponseTime}s</strong>
-                  </div>
-                  <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-secondary, #e5e7eb)' }}>
-                    <div style={{ width: `${width}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg, #6366f1, #06b6d4)' }} />
-                  </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+            <div><h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 17, fontWeight: 800 }}>Answers per Session</h3><p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 12 }}>Last five attended sessions · question counts</p></div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 11, color: 'var(--text-secondary)' }}>{[['Correct', '#16a34a'], ['Incorrect', '#ef4444'], ['Unanswered', '#94a3b8']].map(([label, color]) => <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />{label}</span>)}</div>
+          </div>
+          {recentSessions.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 20 }}>Attend a completed session to see this graph.</p> : (() => {
+            const maxCount = Math.max(1, ...recentSessions.map(session => Number(session.totalQuestions) || ((Number(session.correctAnswers) || 0) + (Number(session.incorrectAnswers) || 0) + (Number(session.missedQuestions) || 0))))
+            const axisMax = Math.max(5, Math.ceil(maxCount / 5) * 5)
+            const ticks = 5
+            return <div style={{ display: 'flex', gap: 7, alignItems: 'stretch', marginTop: 16 }}>
+              <div aria-label="Y-axis: questions" style={{ width: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', writingMode: 'vertical-rl', transform: 'rotate(180deg)', color: 'var(--text-secondary)', fontSize: 10, fontWeight: 700 }}>Questions</div>
+              <div style={{ width: 25, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', paddingBottom: 4, color: 'var(--text-secondary)', fontSize: 10, textAlign: 'right' }}>
+                {Array.from({ length: ticks + 1 }, (_, i) => Math.round(axisMax - (axisMax / ticks) * i)).map((value, i) => <span key={`${value}-${i}`}>{value}</span>)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ position: 'relative', height: 220, borderBottom: '1px solid var(--border-color)', borderLeft: '1px solid var(--border-color)', background: `repeating-linear-gradient(to bottom, transparent 0, transparent calc(20% - 1px), var(--border-color) calc(20% - 1px), var(--border-color) 20%)`, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', gap: 8, padding: '0 7px', boxSizing: 'border-box' }}>
+                  {recentSessions.map((session, index) => {
+                    const correctCount = Number(session.correctAnswers) || 0
+                    const incorrectCount = Number(session.incorrectAnswers) || 0
+                    const unansweredCount = Number(session.missedQuestions) || 0
+                    const total = correctCount + incorrectCount + unansweredCount
+                    const partHeight = value => `${(value / axisMax) * 100}%`
+                    const title = `${session.name}: ${correctCount} correct, ${incorrectCount} incorrect, ${unansweredCount} unanswered (${total} total)`
+                    return <div key={session.roomId || `${session.name}-${index}`} title={title} style={{ height: '100%', flex: '1 1 0', minWidth: 0, maxWidth: 68, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }}>
+                      <div style={{ height: `${Math.min(100, (total / axisMax) * 100)}%`, width: 'min(100%, 42px)', minHeight: total > 0 ? 2 : 0, display: 'flex', flexDirection: 'column-reverse', overflow: 'hidden', borderRadius: '5px 5px 0 0', alignSelf: 'center' }}>
+                        <div style={{ height: partHeight(correctCount), background: '#16a34a' }} />
+                        <div style={{ height: partHeight(incorrectCount), background: '#ef4444' }} />
+                        <div style={{ height: partHeight(unansweredCount), background: '#94a3b8' }} />
+                      </div>
+                    </div>
+                  })}
                 </div>
-              )
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${recentSessions.length}, minmax(0, 1fr))`, gap: 6, paddingTop: 7 }}>
+                  {recentSessions.map((session, index) => <div key={session.roomId || `${session.name}-label-${index}`} title={session.name || 'Unnamed session'} style={{ minWidth: 0, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.name || `Session ${index + 1}`}</div>)}
+                </div>
+                <div style={{ textAlign: 'center', paddingTop: 7, color: 'var(--text-secondary)', fontSize: 11, fontWeight: 700 }}>Sessions</div>
+              </div>
+            </div>
+          })()}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 16, marginBottom: 16 }}>
+        <div className="chart-card" style={cardStyle}>
+          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 17, fontWeight: 800 }}>Accuracy by Question Type</h3>
+          <p style={{ margin: '5px 0 18px', color: 'var(--text-secondary)', fontSize: 12 }}>See which question formats feel strongest across your sessions.</p>
+          <div style={{ display: 'grid', gap: 15 }}>
+            {questionTypes.map(item => (
+              <div key={item.type}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6, fontSize: 12 }}>
+                  <strong style={{ color: 'var(--text-primary)' }}>{item.label}</strong>
+                  <span style={{ color: 'var(--text-secondary)', textAlign: 'right' }}>{item.available ? `${item.accuracy}% accuracy` : 'No data yet'}</span>
+                </div>
+                <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-secondary, #e5e7eb)' }}>
+                  <div style={{ width: `${item.available ? Math.max(0, Math.min(100, item.accuracy)) : 0}%`, height: '100%', borderRadius: 999, background: !item.available ? 'transparent' : item.accuracy >= 75 ? '#16a34a' : item.accuracy >= 60 ? '#d97706' : '#ef4444', transition: 'width .3s ease' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="chart-card" style={cardStyle}>
+          <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 17, fontWeight: 800 }}>Question Type Mix</h3>
+          <p style={{ margin: '5px 0 18px', color: 'var(--text-secondary)', fontSize: 12 }}>How your attempted answers are distributed across question formats.</p>
+          {questionTypes.every(item => !item.available) ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Question-type activity will appear after you answer questions.</p> : <div style={{ display: 'grid', gap: 14 }}>
+            {questionTypes.map(item => {
+              const typeShare = attemptedQuestions > 0 ? Math.round((item.attempted / attemptedQuestions) * 100) : 0
+              return <div key={item.type}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6, fontSize: 12 }}><strong style={{ color: 'var(--text-primary)' }}>{item.shortLabel}</strong><span style={{ color: 'var(--text-secondary)' }}>{item.attempted} attempted · {typeShare}%</span></div>
+                <div style={{ height: 10, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-secondary, #e5e7eb)' }}><div style={{ width: `${typeShare}%`, height: '100%', borderRadius: 999, background: item.type === 'MCQ' ? '#6366f1' : item.type === 'MSQ' ? '#0d9488' : '#f59e0b' }} /></div>
+              </div>
             })}
           </div>}
         </div>
       </div>
 
+      <div style={{ margin: '24px 0 14px' }}>
+        <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: isMobile ? 21 : 25, letterSpacing: '-0.03em' }}>Performance Insights</h2>
+        <p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>Practical feedback based on your recorded session data.</p>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 16 }}>
-        <InsightList title="Strengths" icon="🏆" color="#15803d" items={insights.strengths} />
+        <InsightList title="Strengths / Areas to Gain" icon="↗" color="#15803d" items={insights.strengths} />
         <InsightList title="Areas to Improve" icon="🎯" color="#b91c1c" items={insights.improvements} />
-        <InsightList title="Key Insights" icon="📈" color="#6d28d9" items={insights.keyInsights} />
+        <InsightList title="Key Insights" icon="✦" color="#6d28d9" items={insights.keyInsights} />
       </div>
     </div>
+  )
+}
+
+function PerformanceHighlights({ best, weakest, history, isMobile, navigate }) {
+  const highlightItems = [
+    { label: 'Best Performance', description: 'Your highest-scoring attended session', item: best, icon: '🏅', color: '#15803d', background: 'rgba(22,163,74,.08)' },
+    { label: 'Weakest Performance', description: 'A session worth reviewing', item: weakest, icon: '🔎', color: '#b45309', background: 'rgba(245,158,11,.09)' }
+  ]
+  return (
+    <section style={{ marginTop: 20 }}>
+      <div style={{ marginBottom: 13 }}>
+        <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: isMobile ? 21 : 24 }}>Best & Weakest Performance</h2>
+        <p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>Compare your personal best with the session you may want to revisit.</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+        {highlightItems.map(({ label, description, item, icon, color, background }) => {
+          const relatedSession = item?.roomId ? history.find(session => String(session.roomId) === String(item.roomId)) : null
+          return (
+            <div className="chart-card highlight-card" key={label} style={{ position: 'relative', padding: isMobile ? 17 : 22, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 20, minWidth: 0, overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: color }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: 44, height: 44, flexShrink: 0, borderRadius: 14, background, fontSize: 23 }}>{icon}</span>
+                <div style={{ minWidth: 0 }}>
+                  <h3 style={{ margin: 0, color, fontSize: 16, fontWeight: 850 }}>{label}</h3>
+                  <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: 12 }}>{description}</p>
+                </div>
+              </div>
+              {item ? <>
+                <div style={{ color: 'var(--text-primary)', fontSize: 17, fontWeight: 850, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{item.name || 'Untitled session'}</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginTop: 4 }}>{relatedSession?.date ? formatDate(relatedSession.date) : 'Completed session'}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 17 }}>
+                  <div style={{ borderRadius: 12, padding: 11, background: 'var(--bg-secondary, rgba(127,127,127,.06))' }}><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Score</div><strong style={{ display: 'block', color, fontSize: 20, marginTop: 3 }}>{Number(item.score) || 0}%</strong></div>
+                  <div style={{ borderRadius: 12, padding: 11, background: 'var(--bg-secondary, rgba(127,127,127,.06))' }}><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Accuracy</div><strong style={{ display: 'block', color: 'var(--text-primary)', fontSize: 20, marginTop: 3 }}>{Number(item.accuracy) || 0}%</strong></div>
+                  <div style={{ borderRadius: 12, padding: 11, background: 'var(--bg-secondary, rgba(127,127,127,.06))' }}><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Rank</div><strong style={{ display: 'block', color: 'var(--text-primary)', fontSize: 20, marginTop: 3 }}>{formatRank(item.rank)}</strong></div>
+                </div>
+                {item.roomId && <button type="button" className="session-view-button" style={{ marginTop: 14 }} onClick={() => navigate(`/student/room/${item.roomId}/results`)}>◉ View session details</button>}
+              </> : <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: 0 }}>This insight will appear when enough completed-session data is available.</p>}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function RecentChangesSection({ history, recent, isMobile }) {
+  const latest = history[history.length - 1] || null
+  const previous = history[history.length - 2] || null
+  const correctChange = latest && previous ? Number(latest.correctAnswers || 0) - Number(previous.correctAnswers || 0) : null
+  const metrics = [
+    { label: 'Score', value: recent?.scoreChange ?? (latest && previous ? latest.score - previous.score : null), unit: ' pts', detail: latest && previous ? `${previous.score}% → ${latest.score}%` : 'Need two sessions', icon: '📊', tone: (recent?.scoreChange ?? (latest && previous ? latest.score - previous.score : 0)) >= 0 ? 'positive' : 'negative' },
+    { label: 'Accuracy', value: recent?.accuracyChange ?? (latest && previous ? latest.accuracy - previous.accuracy : null), unit: ' pp', detail: latest && previous ? `${previous.accuracy}% → ${latest.accuracy}%` : 'Need two sessions', icon: '🎯', tone: (recent?.accuracyChange ?? (latest && previous ? latest.accuracy - previous.accuracy : 0)) >= 0 ? 'positive' : 'negative' },
+    { label: 'Correct Answers', value: correctChange, unit: ' answers', detail: latest && previous ? `${previous.correctAnswers || 0} → ${latest.correctAnswers || 0}` : 'Need two sessions', icon: '✅', tone: (correctChange ?? 0) >= 0 ? 'positive' : 'negative' },
+    { label: 'Rank Improvement', value: recent?.rankChange ?? (latest && previous && latest.rank != null && previous.rank != null ? previous.rank - latest.rank : null), unit: ' places', detail: latest && previous ? `${formatRank(previous.rank)} → ${formatRank(latest.rank)}` : 'Need two sessions', icon: '🏆', tone: (recent?.rankChange ?? (latest && previous && latest.rank != null && previous.rank != null ? previous.rank - latest.rank : 0)) >= 0 ? 'positive' : 'negative' }
+  ]
+  return (
+    <section style={{ marginTop: 22,marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div><h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: isMobile ? 21 : 24 }}>Recent Changes</h2><p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>What changed between your two latest attended sessions.</p></div>
+        <span style={{ borderRadius: 999, padding: '6px 10px', background: 'var(--bg-secondary, rgba(127,127,127,.06),)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 750 }}>Latest vs previous</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 13 }}>
+        {metrics.map(metric => {
+          const positive = metric.tone === 'positive'
+          const neutral = metric.value === 0
+          const statusLabel = metric.value == null ? 'Not enough data' : neutral ? 'No change' : positive ? 'Improved' : 'Decreased'
+          const accent = metric.value == null || neutral ? '#64748b' : positive ? '#15803d' : '#b91c1c'
+          const valueText = metric.value == null ? '—' : `${metric.value > 0 ? '+' : ''}${metric.value}${metric.unit}`
+          return <div className="change-card" key={metric.label} style={{ padding: isMobile ? 14 : 18, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 19, minWidth: 0, boxShadow: 'var(--shadow-sm, 0 1px 3px rgba(0,0,0,.05))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 15 }}>
+              <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: 40, height: 40, borderRadius: 13, background: `${accent}14`, fontSize: 21 }}>{metric.icon}</span>
+              <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '5px 7px', color: accent, background: `${accent}12`, whiteSpace: 'nowrap' }}>{statusLabel}</span>
+            </div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 750 }}>{metric.label}</div>
+            <div style={{ color: accent, fontSize: isMobile ? 19 : 23, fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.2, marginTop: 5, overflowWrap: 'anywhere' }}>{valueText}</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--border-color)' }}>{metric.detail}</div>
+          </div>
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -456,22 +807,9 @@ function StudentPerformancePage() {
   const hasHistory = history.length > 0
   const chartTrends = data?.trends || { score: [], accuracy: [], rank: [] }
   const answeringPattern = data?.answeringPattern || { averageResponseTime: null, totalResponses: 0, questionTypes: [] }
-  const chartHistoryCount = history.length
-  const tableHistory = history
-
+  const attendedHistory = history.filter(item => item.attended)
+  const chartHistoryCount = attendedHistory.length
   const recent = summary?.recentComparison
-  const scoreChangeTone = recent?.scoreChange > 0 ? 'positive' : recent?.scoreChange < 0 ? 'negative' : 'neutral'
-  const accuracyChangeTone = recent?.accuracyChange > 0 ? 'positive' : recent?.accuracyChange < 0 ? 'negative' : 'neutral'
-
-  const rankText = summary?.currentRank != null ? formatRank(summary.currentRank) : '—'
-  //const avgRankText = summary?.averageRank != null ? `#${summary.averageRank}` : '—'
-
-  const attendanceRate = useMemo(() => {
-    if (!summary?.totalQuestions) return 0
-    const sessions = summary.totalSessions || 0
-    return sessions ? Math.round((history.filter(h => h.attended).length / sessions) * 100) : 0
-  }, [summary, history])
-
   return (
     <>
       <style>{`
@@ -678,8 +1016,8 @@ function StudentPerformancePage() {
         .performance-metric {
           position: relative;
           overflow: hidden;
-          min-height: 150px;
-          padding: 21px !important;
+          min-height: 126px;
+          padding: 16px !important;
           border: 1px solid color-mix(in srgb, var(--pj-brand) 9%, var(--pj-border)) !important;
           border-radius: 24px !important;
           background:
@@ -731,8 +1069,8 @@ function StudentPerformancePage() {
         .performance-metric:hover::after { transform: scale(1.35); }
 
         .performance-metric > div:nth-child(2) {
-          font-size: 34px !important;
-          letter-spacing: -.045em !important;
+          font-size: 27px !important;
+          letter-spacing: -.04em !important;
         }
 
         .metric-icon {
@@ -1151,177 +1489,119 @@ function StudentPerformancePage() {
             transition: none !important;
           }
         }
+
+        .session-row:hover { background: color-mix(in srgb, var(--pj-brand) 5%, var(--pj-card)); }
+        .session-view-button {
+          border: 1px solid color-mix(in srgb, var(--pj-brand) 22%, var(--pj-border));
+          color: var(--pj-brand); background: color-mix(in srgb, var(--pj-brand) 7%, var(--pj-card));
+          border-radius: 9px; padding: 7px 11px; font-weight: 750; font-size: 12px; cursor: pointer;
+          display: inline-flex; align-items: center; gap: 6px; transition: transform .2s ease, background .2s ease;
+        }
+        .session-view-button:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--pj-brand) 13%, var(--pj-card)); }
+        .pagination-button {
+          border: 1px solid var(--pj-border); border-radius: 10px; padding: 8px 12px;
+          background: var(--pj-glass-hi); color: var(--pj-ink); font-size: 12px; font-weight: 750; cursor: pointer;
+        }
+        .pagination-button:disabled { opacity: .42; cursor: not-allowed; }
+        .streak-grid span { transition: transform .15s ease, outline-color .15s ease; }
+        .streak-grid span:hover { transform: scale(1.2); outline: 1px solid var(--pj-brand); z-index: 2; }
+        @media (max-width: 900px) {
+          .streak-grid { grid-template-columns: repeat(14, minmax(7px, 1fr)) !important; }
+        }
+        @media (max-width: 520px) {
+          .streak-grid { grid-template-columns: repeat(7, minmax(10px, 1fr)) !important; }
+        }
       `}</style>
 
       <div className="performance-shell" style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)', fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif' }}>
-      <Sidebar user={user} />
-      <main style={{ flex: 1, minWidth: 0, marginLeft: 'var(--sidebar-width, 240px)' }}>
-        <header className="performance-header" style={{ background: 'var(--header-bg)', color: '#fff', padding: isMobile ? '20px 16px 22px' : '28px 32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ paddingLeft: isMobile ? 48 : 0, minWidth: 0 }}>
-              <div style={{ fontSize: 12, opacity: 0.78, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700 }}>Student Analytics</div>
-              <h1 style={{ margin: '7px 0 0', fontSize: isMobile ? 23 : 30, lineHeight: 1.15, letterSpacing: '-0.035em' }}>Performance Journey</h1>
-              <p style={{ margin: '8px 0 0', opacity: 0.86, fontSize: 14 }}>Your progress across completed Spandan sessions.</p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button className="header-action-btn" onClick={() => fetchPerformance()} disabled={isLoading} style={{
-                border: '1px solid rgba(255,255,255,0.28)', background: 'rgba(255,255,255,0.1)', color: '#fff',
-                borderRadius: 10, padding: '9px 12px', fontWeight: 700, cursor: isLoading ? 'wait' : 'pointer'
-              }}>{isLoading ? 'Refreshing…' : '↻ Refresh'}</button>
-              <ThemeToggle />
-              <ProfileDropdown />
-            </div>
-          </div>
-        </header>
-
-        <section className="performance-content" style={{ padding: isMobile ? '16px 16px 0' : '32px 32px 0', maxWidth: 1400, margin: '0 auto' }}>
-          {lastUpdated && !error && (
-            <div className="updated-label" style={{ marginBottom: 14, display: 'flex', justifyContent: 'flex-end', color: 'var(--text-secondary)', fontSize: 12 }}>
-              Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
-          )}
-
-          {error && (
-            <div style={{ marginBottom: 16, padding: '13px 15px', borderRadius: 14, border: '1px solid rgba(239,68,68,0.28)', background: 'rgba(239,68,68,0.08)', color: 'var(--text-primary)', fontSize: 14 }}>
-              <strong>Couldn’t load your performance.</strong> {error}
-              <button onClick={() => fetchPerformance()} style={{ marginLeft: 10, border: 'none', background: 'transparent', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>Try again</button>
-            </div>
-          )}
-
-          {isLoading && !data ? (
-            <div className="performance-loading" aria-live="polite">
-              <div className="loading-orbit" aria-hidden="true" />
-              <div>Loading your performance journey…</div>
-            </div>
-          ) : !hasHistory ? (
-            <div className="journey-empty-wrap">
-              <EmptyState onJoin={() => navigate('/student/join-room')} />
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0,1fr))', gap: 14, marginBottom: 18 }}>
-                <PerformanceMetric label="Overall Accuracy" value={`${summary.overallAccuracy}%`} caption={`${summary.correctAnswers} correct of ${summary.attemptedQuestions} attempted`} icon="🎯" />
-                <PerformanceMetric label="Average Score" value={`${summary.averageScore}%`} caption={`Across ${summary.totalSessions} completed sessions`} icon="⭐" />
-                <PerformanceMetric label="Current Rank" value={rankText} caption="Current leaderboard position"icon="🏆" />
-                <PerformanceMetric label="Sessions Attended" value={summary.totalSessions} caption={`${attendanceRate}% of recorded journey sessions`} icon="📚" />
+        <Sidebar user={user} />
+        <main style={{ flex: 1, minWidth: 0, marginLeft: 'var(--sidebar-width, 240px)' }}>
+          <header className="performance-header" style={{ background: 'var(--header-bg)', color: '#fff', padding: isMobile ? '20px 16px 22px' : '28px 32px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <div style={{ paddingLeft: isMobile ? 48 : 0, minWidth: 0 }}>
+                <div style={{ fontSize: 12, opacity: 0.78, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700 }}>Student Analytics</div>
+                <h1 style={{ margin: '7px 0 0', fontSize: isMobile ? 23 : 30, lineHeight: 1.15, letterSpacing: '-0.035em' }}>Student Performance Journey</h1>
+                <p style={{ margin: '8px 0 0', opacity: 0.86, fontSize: 14 }}>Track your progress and keep improving with every completed live session.</p>
               </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button className="header-action-btn" onClick={() => fetchPerformance()} disabled={isLoading} style={{ border: '1px solid rgba(255,255,255,0.28)', background: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: 10, padding: '9px 12px', fontWeight: 700, cursor: isLoading ? 'wait' : 'pointer' }}>{isLoading ? 'Refreshing…' : '↻ Refresh'}</button>
+                <ThemeToggle />
+                <ProfileDropdown />
+              </div>
+            </div>
+          </header>
 
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: 18, marginBottom: 18 }}>
-                <div className="chart-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, padding: isMobile ? 18 : 24, boxShadow: 'var(--shadow-md)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 18 }}>
-                    <div>
-                      <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Score Journey</h2>
-                      <p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>Session score including unanswered questions as zero points.</p>
+          <section className="performance-content" style={{ padding: isMobile ? '16px 14px 24px' : '24px 24px 32px', maxWidth: 1500, margin: '0 auto' }}>
+            {lastUpdated && !error && <div className="updated-label" style={{ marginBottom: 14, display: 'flex', justifyContent: 'flex-end', color: 'var(--text-secondary)', fontSize: 12 }}>Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
+
+            {error && <div style={{ marginBottom: 16, padding: '13px 15px', borderRadius: 14, border: '1px solid rgba(239,68,68,0.28)', background: 'rgba(239,68,68,0.08)', color: 'var(--text-primary)', fontSize: 14 }}><strong>Couldn’t load your performance.</strong> {error}<button onClick={() => fetchPerformance()} style={{ marginLeft: 10, border: 'none', background: 'transparent', color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>Try again</button></div>}
+
+            {isLoading && !data ? (
+              <div className="performance-loading" aria-live="polite"><div className="loading-orbit" aria-hidden="true" /><div>Loading your performance journey…</div></div>
+            ) : !hasHistory ? (
+              <div className="journey-empty-wrap"><EmptyState onJoin={() => navigate('/student/join-room')} /></div>
+            ) : (
+              <>
+                {/* Primary KPIs: the rank and session-attendance cards were replaced by question metrics. */}
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
+                  <PerformanceMetric label="Overall Accuracy" value={`${summary?.overallAccuracy ?? 0}%`} caption="Correct answers out of attempted" icon="🎯" />
+                  <PerformanceMetric label="Average Score" value={`${summary?.averageScore ?? 0}%`} caption={`Across ${summary?.totalSessions ?? chartHistoryCount} attended sessions`} icon="⭐" />
+                  <PerformanceMetric label="Questions Attempted" value={summary?.attemptedQuestions ?? 0} caption="Answers submitted" icon="📝" />
+                  <PerformanceMetric label="Correct Answers" value={summary?.correctAnswers ?? 0} caption="Correctly answered" icon="✅" />
+                  <PerformanceMetric label="Incorrect Answers" value={summary?.incorrectAnswers ?? 0} caption="Answers to review" icon="❌" />
+                  <PerformanceMetric label="Missed Questions" value={summary?.missedQuestions ?? 0} caption="Questions left unanswered" icon="⏭️" />
+                </div>
+
+                <RecentChangesSection history={attendedHistory} recent={recent} isMobile={isMobile} />
+
+                <AttendanceStreak history={history} isMobile={isMobile} />
+
+
+                {/* Score Journey and the data-driven accuracy milestone share a balanced 50/50 row. */}
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 18, marginBottom: 20, alignItems: 'stretch' }}>
+                  <div className="chart-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, padding: isMobile ? 16 : 22, boxShadow: 'var(--shadow-md)', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                        <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flexShrink: 0, width: 44, height: 44, borderRadius: 14, background: 'rgba(37,99,235,.10)', fontSize: 23 }}>📈</span>
+                        <div><h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 19 }}>Score Journey</h2><p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>Your score across each completed session.</p></div>
+                      </div>
                     </div>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{chartHistoryCount} sessions</span>
+                    <div style={{ color: '#2563eb' }}><TrendLine points={chartTrends.score} yLabel="Score (%)" /></div>
                   </div>
-                  <div style={{ color: 'var(--accent, #3b82f6)' }}><TrendLine points={chartTrends.score} /></div>
-                </div>
 
-                <div className="change-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, padding: isMobile ? 18 : 24, boxShadow: 'var(--shadow-md)' }}>
-                  <div style={{ marginBottom: 18 }}>
-                    <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Recent Change</h2>
-                    <p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>Latest completed session vs the one before it.</p>
-                  </div>
-                  {hasHistory && recent ? (
-                    <div style={{ display: 'grid', gap: 12 }}>
-                      {[['Score', recent.scoreChange, '%', scoreChangeTone], ['Accuracy', recent.accuracyChange, '%', accuracyChangeTone], ['Rank', recent.rankChange, ' places', recent.rankChange > 0 ? 'positive' : recent.rankChange < 0 ? 'negative' : 'neutral']].map(([label, value, suffix, tone]) => (
-                        <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 14px', borderRadius: 14, background: 'var(--bg-secondary, rgba(127,127,127,0.08))' }}>
-                          <span style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 600 }}>{label}</span>
-                          <span style={{ color: tone === 'positive' ? '#16a34a' : tone === 'negative' ? '#dc2626' : 'var(--text-primary)', fontWeight: 800 }}>{signed(value, suffix)}</span>
-                        </div>
-                      ))}
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Latest: <strong style={{ color: 'var(--text-primary)' }}>{recent.current.name}</strong></div>
-                      {recent.previous && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Previous: <strong style={{ color: 'var(--text-primary)' }}>{recent.previous.name}</strong></div>}
+                  <NextAccuracyMilestone history={attendedHistory} isMobile={isMobile} />
+
+                  <div className="chart-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, padding: isMobile ? 16 : 22, boxShadow: 'var(--shadow-md)', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+                        <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flexShrink: 0, width: 42, height: 42, borderRadius: 13, background: 'rgba(139,92,246,.12)', fontSize: 22 }}>🎯</span>
+                        <div><h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Accuracy Trend</h2><p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 12 }}>Session accuracy with an overall average reference.</p></div>
+                      </div>
                     </div>
-                  ) : <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Complete another session to see a comparison.</div>}
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 18, marginBottom: 18 }}>
-                <div className="chart-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, padding: isMobile ? 18 : 24, boxShadow: 'var(--shadow-md)' }}>
-                  <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Accuracy Trend</h2>
-                  <p style={{ margin: '5px 0 18px', color: 'var(--text-secondary)', fontSize: 13 }}>Correct answers divided by questions you attempted.</p>
-                  <div style={{ color: 'var(--accent, #3b82f6)' }}><TrendLine points={chartTrends.accuracy} /></div>
-                </div>
-                <div className="chart-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, padding: isMobile ? 18 : 24, boxShadow: 'var(--shadow-md)' }}>
-                  <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Rank Journey</h2>
-                  <p style={{ margin: '5px 0 18px', color: 'var(--text-secondary)', fontSize: 13 }}>Rank within each completed session. Lower is better.</p>
-                  <div style={{ color: 'var(--accent, #3b82f6)' }}><TrendLine points={chartTrends.rank} invert unit="" /></div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0,1fr))', gap: 14, marginBottom: 18 }}>
-                {[['Attempted', summary.attemptedQuestions, 'questions'], ['Missed', summary.missedQuestions, 'questions'], ['Correct', summary.correctAnswers, 'answers'], ['Incorrect', summary.incorrectAnswers, 'answers']].map(([label, value, sub]) => (
-                  <div key={label} style={{ padding: 18, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 18 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>{label}</div>
-                    <div style={{ marginTop: 8, fontSize: 25, fontWeight: 800, color: 'var(--text-primary)' }}>{value}</div>
-                    <div style={{ marginTop: 3, fontSize: 12, color: 'var(--text-secondary)' }}>{sub}</div>
+                    <AccuracyBarChart points={chartTrends.accuracy} />
                   </div>
-                ))}
-              </div>
 
-              <AnsweringPatternSection summary={summary} history={history} answeringPattern={answeringPattern} isMobile={isMobile} />
-
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 18, marginBottom: 22 }}>
-                {[['Best Performance', summary.bestPerformance, 'var(--accent, #3b82f6)'], ['Weakest Performance', summary.weakestPerformance, '#8b5cf6']].map(([label, item, accent]) => (
-                  <div key={label} className="highlight-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, padding: isMobile ? 18 : 22, position: 'relative', overflow: 'hidden' }}>
-                    <div style={{ position: 'absolute', inset: '0 auto 0 0', width: 4, background: accent }} />
-                    <div style={{ paddingLeft: 4 }}>
-                      <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-                      <div style={{ marginTop: 8, color: 'var(--text-primary)', fontSize: 18, fontWeight: 800 }}>{item?.name || '—'}</div>
-                      {item && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}><span style={{ padding: '6px 9px', background: 'var(--bg-secondary, rgba(127,127,127,0.08))', borderRadius: 9, fontSize: 12 }}>Score {item.score}%</span><span style={{ padding: '6px 9px', background: 'var(--bg-secondary, rgba(127,127,127,0.08))', borderRadius: 9, fontSize: 12 }}>Accuracy {item.accuracy}%</span><span style={{ padding: '6px 9px', background: 'var(--bg-secondary, rgba(127,127,127,0.08))', borderRadius: 9, fontSize: 12 }}>Rank {formatRank(item.rank)}</span></div>}
+                  <div className="chart-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, padding: isMobile ? 16 : 22, boxShadow: 'var(--shadow-md)', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+                        <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flexShrink: 0, width: 42, height: 42, borderRadius: 13, background: 'rgba(234,88,12,.12)', fontSize: 22 }}>🏆</span>
+                        <div><h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Rank Journey</h2><p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 12 }}>Rank movement across sessions; a smaller rank number is better.</p></div>
+                      </div>
                     </div>
+                    <RankJourneyChart points={chartTrends.rank} />
                   </div>
-                ))}
-              </div>
+                </div>
 
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 22, overflow: 'hidden', boxShadow: 'var(--shadow-md)' }}>
-                <div style={{ padding: isMobile ? 18 : 24, borderBottom: '1px solid var(--border-color)' }}>
-                  <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Session History</h2>
-                  <p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 13 }}>Every completed session contributing to your journey.</p>
-                </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: 'var(--bg-secondary, rgba(127,127,127,0.06))' }}>
-                        {['Session', 'Date', 'Score', 'Accuracy', 'Rank', 'Questions', 'Attempted', 'Missed'].map(head => <th key={head} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 11, color: 'var(--text-secondary)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{head}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...tableHistory].reverse().map((session) => (
-                        <tr
-                          key={session.roomId}
-                          onClick={() => {
-                            if (session.roomId) {
-                              navigate(`/student/room/${session.roomId}/results`)
-                            }
-                          }}
-                          className="session-row"
-                          style={{
-                            borderTop: '1px solid var(--border-color)',
-                            cursor: session.roomId ? 'pointer' : 'default'
-                          }}
-                        >
-                          <td style={{ padding: '14px', color: 'var(--text-primary)', fontWeight: 700 }}>{session.name}</td>
-                          <td style={{ padding: '14px', color: 'var(--text-secondary)', fontSize: 13 }}>{formatDate(session.date)}</td>
-                          <td style={{ padding: '14px', color: 'var(--text-primary)', fontWeight: 800 }}>{session.score}%</td>
-                          <td style={{ padding: '14px', color: 'var(--text-primary)' }}>{session.accuracy}%</td>
-                          <td style={{ padding: '14px', color: 'var(--text-primary)', fontWeight: 700 }}>{formatRank(session.rank)}{session.participantCount ? <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}> / {session.participantCount}</span> : ''}</td>
-                          <td style={{ padding: '14px', color: 'var(--text-secondary)' }}>{session.totalQuestions}</td>
-                          <td style={{ padding: '14px', color: 'var(--text-secondary)' }}>{session.attemptedQuestions}</td>
-                          <td style={{ padding: '14px', color: session.missedQuestions ? '#dc2626' : 'var(--text-secondary)', fontWeight: session.missedQuestions ? 700 : 400 }}>{session.missedQuestions}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </section>
-      </main>
-    </div>
+                <PerformanceHighlights best={summary?.bestPerformance} weakest={summary?.weakestPerformance} history={attendedHistory} isMobile={isMobile} navigate={navigate} />
+
+                <AnsweringPatternSection summary={summary} history={history} answeringPattern={answeringPattern} isMobile={isMobile} />
+
+
+              </>
+            )}
+          </section>
+        </main>
+      </div>
     </>
   )
 }
