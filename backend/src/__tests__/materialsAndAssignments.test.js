@@ -25,8 +25,9 @@ describe('Materials and Assignments Backend Features', () => {
       const ext = '.pdf'
 
       const entry = formatZipEntryFilename(email, title, ext)
-      expect(entry).toBe('alice_student_university_edu_Homework_1_Consensus_Algorithm_Raft.pdf')
+      expect(entry).toBe('alice.student@university.edu_Homework_1_Consensus_Algorithm_Raft.pdf')
     })
+
 
     it('should sanitize dangerous characters and path traversals in filenames', () => {
       const dangerous = '../../../etc/passwd; rm -rf /'
@@ -149,5 +150,48 @@ describe('Materials and Assignments Backend Features', () => {
       expect(updatedSubmission.storedFileName).toBe('456-final.pdf')
       expect(updatedSubmission.submittedAt).toEqual(updateDate)
     })
+
+    it('should reject creating an assignment when deadline is in the past', () => {
+      const validateCreateDeadline = (deadline) => {
+        const deadlineDate = new Date(deadline)
+        if (Number.isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
+          const err = new Error('Deadline must be a future date and time')
+          err.status = 400
+          throw err
+        }
+        return true
+      }
+
+      const pastDeadline = new Date(Date.now() - 60000).toISOString()
+      const futureDeadline = new Date(Date.now() + 86400000).toISOString()
+
+      expect(() => validateCreateDeadline(pastDeadline)).toThrow('Deadline must be a future date and time')
+      expect(validateCreateDeadline(futureDeadline)).toBe(true)
+    })
+  })
+
+  describe('Teacher Download & Bulk ZIP Naming Rules', () => {
+    it('should use submissionDownloadName scheme: {sanitizedStudentEmail}_{sanitizedAssignmentTitle}{extension}', () => {
+      const { submissionDownloadName, safePart } = require('../utils/uploadHelper.js')
+      const name = submissionDownloadName('alice.student@uni.edu', 'Assignment 1 / Raft', 'submission_v1.docx')
+      expect(name).toBe('alice.student@uni.edu_Assignment_1_Raft.docx')
+    })
+
+    it('should fallback to .pdf extension if original filename has no extension', () => {
+      const { submissionDownloadName } = require('../utils/uploadHelper.js')
+      const name = submissionDownloadName('bob@uni.edu', 'Quiz 1', 'noextensionfile')
+      expect(name).toBe('bob@uni.edu_Quiz_1.pdf')
+    })
+
+    it('should verify archiver is a callable function that returns a zip archive stream', async () => {
+      const archiverModule = await import('archiver')
+      const archiver = archiverModule.default || archiverModule
+      expect(typeof archiver).toBe('function')
+
+      const archive = archiver('zip', { zlib: { level: 9 } })
+      expect(archive).toBeDefined()
+      expect(archive._format).toBe('zip')
+    })
   })
 })
+

@@ -237,4 +237,40 @@ describe('ClassAssignmentsTab', () => {
     // Closed assignment shows deadline passed message
     expect(screen.getByText(/Deadline has passed\. Submissions for this assignment are closed\./i)).toBeInTheDocument()
   })
+
+  it('blocks creating assignment when deadline is in the past and shows error', async () => {
+    const { assignmentApi } = require('../lib/api')
+    render(
+      <ClassAssignmentsTab
+        classId="class-1"
+        isTeacher={true}
+        user={{ _id: 'teacher-1', role: 'teacher' }}
+        isMobile={false}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Create Assignment/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Create Assignment/i }))
+
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\., Assignment 1/i), {
+      target: { value: 'Test Past Assignment' }
+    })
+
+    const dateInput = document.querySelector('input[type="datetime-local"]')
+    expect(dateInput).toHaveAttribute('min')
+
+    fireEvent.change(dateInput, {
+      target: { value: '2020-01-01T12:00' }
+    })
+
+    // Submit form
+    fireEvent.submit(dateInput.closest('form'))
+
+    expect(screen.getByText('Deadline must be a future date and time')).toBeInTheDocument()
+    expect(assignmentApi.create).not.toHaveBeenCalled()
+  })
 })
+

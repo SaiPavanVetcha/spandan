@@ -125,6 +125,13 @@ export default function ClassAssignmentsTab({
     }
   }, [socket, classId, isTeacher, submissionsState])
 
+  // Helper for datetime-local minimum value
+  const getMinDeadlineLocal = () => {
+    const now = new Date()
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
+    return now.toISOString().slice(0, 16)
+  }
+
   // Teacher: Create Assignment
   const handleCreateAssignment = async (e) => {
     e.preventDefault()
@@ -137,6 +144,12 @@ export default function ClassAssignmentsTab({
       return
     }
 
+    const deadlineDate = new Date(newDeadline)
+    if (Number.isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
+      setError('Deadline must be a future date and time')
+      return
+    }
+
     setIsCreating(true)
     setError(null)
     try {
@@ -145,10 +158,11 @@ export default function ClassAssignmentsTab({
       if (newDescription.trim()) {
         formData.append('description', newDescription.trim())
       }
-      formData.append('deadline', new Date(newDeadline).toISOString())
+      formData.append('deadline', deadlineDate.toISOString())
       if (newFile) {
         formData.append('file', newFile)
       }
+
 
       await assignmentApi.create(classId, formData)
 
@@ -297,7 +311,7 @@ export default function ClassAssignmentsTab({
   return (
     <div>
       {/* Alert banners */}
-      {error && (
+      {!showCreateModal && error && (
         <div style={{
           padding: '12px 16px',
           borderRadius: 14,
@@ -1014,6 +1028,23 @@ export default function ClassAssignmentsTab({
             </div>
 
             <form onSubmit={handleCreateAssignment} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {error && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  background: 'color-mix(in srgb, #ef4444 12%, var(--bg-card))',
+                  border: '1px solid color-mix(in srgb, #ef4444 35%, transparent)',
+                  color: '#ef4444',
+                  fontSize: 13,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}>
+                  <AlertCircle size={15} />
+                  <span>{error}</span>
+                </div>
+              )}
+
               {/* Title */}
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 650, color: 'var(--text-primary)', marginBottom: 6 }}>
@@ -1054,10 +1085,12 @@ export default function ClassAssignmentsTab({
                 <input
                   type="datetime-local"
                   required
+                  min={getMinDeadlineLocal()}
                   value={newDeadline}
                   onChange={(e) => setNewDeadline(e.target.value)}
                   style={inputStyle()}
                 />
+
               </div>
 
               {/* Optional brief attachment file */}

@@ -1,7 +1,7 @@
 import express from 'express'
 import path from 'path'
 import fs from 'fs'
-import * as archiver from 'archiver'
+import archiverModule from 'archiver'
 import {
   getAssignments,
   createAssignment,
@@ -20,8 +20,14 @@ import {
   handleUpload,
   SUBMISSIONS_DIR,
   sanitizeFilename,
-  formatZipEntryFilename
+  formatZipEntryFilename,
+  safePart,
+  submissionDownloadName,
+  removeFile
 } from '../utils/uploadHelper.js'
+
+const archiver = archiverModule.default || archiverModule
+
 
 const router = express.Router({ mergeParams: true })
 
@@ -50,12 +56,20 @@ router.post(
   handleUpload(assignmentUploader.single('file')),
   async (req, res) => {
     try {
+      const { deadline } = req.body
+      const deadlineDate = new Date(deadline)
+      if (Number.isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
+        if (req.file) removeFile(req.file.path)
+        return res.status(400).json({ error: 'Deadline must be a future date and time' })
+      }
+
       const assignment = await createAssignment(
         req.params.classId,
         req.user,
         req.body,
         req.file
       )
+
 
       const io = req.app.get('io')
       if (io) {
@@ -166,9 +180,8 @@ router.get(
         for (const sub of submissions) {
           const filePath = path.join(SUBMISSIONS_DIR, sub.storedFileName)
           if (fs.existsSync(filePath)) {
-            const ext = path.extname(sub.originalFileName) || ''
             const studentEmail = sub.studentId?.email || 'student'
-            const entryName = formatZipEntryFilename(studentEmail, assignment.title, ext)
+            const entryName = submissionDownloadName(studentEmail, assignment.title, sub.originalFileName)
             archive.file(filePath, { name: entryName })
           }
         }
@@ -192,19 +205,20 @@ router.get(
   authenticate,
   async (req, res) => {
     try {
-      const { submission, filePath } = await downloadStudentSubmission(
+      const { downloadFilename, filePath } = await downloadStudentSubmission(
         req.params.classId,
         req.params.id,
         req.params.studentId,
         req.user
       )
 
-      res.download(filePath, submission.originalFileName)
+      res.download(filePath, downloadFilename)
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message })
     }
   }
 )
+
 
 /**
  * GET /api/classes/:classId/assignments/:id/submissions

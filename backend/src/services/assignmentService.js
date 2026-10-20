@@ -8,8 +8,11 @@ import {
   ASSIGNMENTS_DIR,
   SUBMISSIONS_DIR,
   removeFile,
-  formatZipEntryFilename
+  formatZipEntryFilename,
+  safePart,
+  submissionDownloadName
 } from '../utils/uploadHelper.js'
+
 
 /**
  * Get assignments for class with submission status / counts
@@ -90,12 +93,13 @@ export const createAssignment = async (classId, user, { title, description, dead
   }
 
   const parsedDeadline = new Date(deadline)
-  if (isNaN(parsedDeadline.getTime())) {
+  if (Number.isNaN(parsedDeadline.getTime()) || parsedDeadline <= new Date()) {
     if (file) removeFile(path.join(ASSIGNMENTS_DIR, file.filename))
-    const err = new Error('A valid deadline date is required')
+    const err = new Error('Deadline must be a future date and time')
     err.status = 400
     throw err
   }
+
 
   const assignment = await ClassAssignment.create({
     classId,
@@ -331,6 +335,13 @@ export const downloadStudentSubmission = async (classId, assignmentId, studentId
     throw err
   }
 
+  const assignment = await ClassAssignment.findOne({ _id: assignmentId, classId }).select('title').lean()
+  if (!assignment) {
+    const err = new Error('Assignment not found')
+    err.status = 404
+    throw err
+  }
+
   const submission = await AssignmentSubmission.findOne({
     assignmentId,
     classId,
@@ -350,8 +361,13 @@ export const downloadStudentSubmission = async (classId, assignmentId, studentId
     throw err
   }
 
-  return { submission, filePath }
+  const downloadFilename = isTeacher
+    ? submissionDownloadName(submission.studentId?.email, assignment.title, submission.originalFileName)
+    : submission.originalFileName
+
+  return { submission, assignment, filePath, downloadFilename }
 }
+
 
 /**
  * Prepare bulk download submissions for assignment (Teacher only)

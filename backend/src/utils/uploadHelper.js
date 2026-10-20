@@ -53,15 +53,26 @@ export const sanitizeFilename = (name) => {
     .replace(/_+/g, '_')
 }
 
+export function safePart(str) {
+  return String(str || 'file')
+    .replace(/[^a-zA-Z0-9._@-]+/g, '_')
+    .slice(0, 80)
+}
+
+export function submissionDownloadName(studentEmail, assignmentTitle, originalName) {
+  const ext = (originalName && String(originalName).includes('.'))
+    ? String(originalName).slice(String(originalName).lastIndexOf('.'))
+    : '.pdf'
+  return `${safePart(studentEmail)}_${safePart(assignmentTitle)}${ext}`
+}
+
 /**
  * Format bulk zip entry: {sanitizedEmail}_{sanitizedTitle}{ext}
  */
 export const formatZipEntryFilename = (email, title, ext) => {
-  const safeEmail = sanitizeFilename((email || 'student').replace(/[@.]/g, '_'))
-  const safeTitle = sanitizeFilename(title || 'assignment')
-  const cleanExt = ext ? (ext.startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`) : ''
-  return `${safeEmail}_${safeTitle}${cleanExt}`
+  return submissionDownloadName(email, title, ext)
 }
+
 
 const fileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase()
