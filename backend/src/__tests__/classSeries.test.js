@@ -7,12 +7,12 @@
 // 5. Late-join active question recovery
 
 describe('Class Series Feature', () => {
-  describe('Rule 1: One Active Session Per Class', () => {
-    it('should reject starting a session when another session under the class is active', () => {
-      const checkCanStartSession = (existingRooms) => {
-        const active = existingRooms.find(r => r.isActive && !r.endedAt)
+  describe('Rule 1: Global One Active Session Across All Classes', () => {
+    it('should reject starting a session when teacher has an active session in ANY class', () => {
+      const checkCanStartClassSession = (teacherRooms, targetClassId) => {
+        const active = teacherRooms.find(r => r.classId && r.isActive && !r.endedAt)
         if (active) {
-          const err = new Error('An active session is already running for this class. End the current live session first.')
+          const err = new Error('You already have a live class session. End it before starting a new one in any class.')
           err.code = 'ACTIVE_SESSION_EXISTS'
           err.activeRoomId = active._id
           throw err
@@ -20,24 +20,27 @@ describe('Class Series Feature', () => {
         return true
       }
 
-      const activeRooms = [
-        { _id: 'room-1', name: 'Lecture 1', isActive: true, endedAt: null }
+      // Session active in class-A; attempting to start session in class-B
+      const teacherRooms = [
+        { _id: 'room-1', classId: 'class-A', name: 'DBMS Lecture 1', isActive: true, endedAt: null }
       ]
 
-      expect(() => checkCanStartSession(activeRooms)).toThrow('An active session is already running for this class')
+      expect(() => checkCanStartClassSession(teacherRooms, 'class-B')).toThrow(
+        'You already have a live class session. End it before starting a new one in any class.'
+      )
       try {
-        checkCanStartSession(activeRooms)
+        checkCanStartClassSession(teacherRooms, 'class-B')
       } catch (err) {
         expect(err.code).toBe('ACTIVE_SESSION_EXISTS')
         expect(err.activeRoomId).toBe('room-1')
       }
     })
 
-    it('should allow starting a session when all past sessions have ended', () => {
-      const checkCanStartSession = (existingRooms) => {
-        const active = existingRooms.find(r => r.isActive && !r.endedAt)
+    it('should allow starting a session when all past sessions have ended across all classes', () => {
+      const checkCanStartClassSession = (teacherRooms) => {
+        const active = teacherRooms.find(r => r.classId && r.isActive && !r.endedAt)
         if (active) {
-          const err = new Error('An active session is already running for this class.')
+          const err = new Error('You already have a live class session.')
           err.code = 'ACTIVE_SESSION_EXISTS'
           throw err
         }
@@ -45,12 +48,39 @@ describe('Class Series Feature', () => {
       }
 
       const completedRooms = [
-        { _id: 'room-1', name: 'Lecture 1', isActive: false, endedAt: new Date('2026-10-01') },
-        { _id: 'room-2', name: 'Lecture 2', isActive: true, endedAt: new Date('2026-10-08') } // endedAt is set
+        { _id: 'room-1', classId: 'class-A', name: 'Lecture 1', isActive: false, endedAt: new Date('2026-10-01') },
+        { _id: 'room-2', classId: 'class-B', name: 'Lecture 2', isActive: true, endedAt: new Date('2026-10-08') } // endedAt is set
       ]
 
-      expect(checkCanStartSession(completedRooms)).toBe(true)
-      expect(checkCanStartSession([])).toBe(true)
+      expect(checkCanStartClassSession(completedRooms)).toBe(true)
+      expect(checkCanStartClassSession([])).toBe(true)
+    })
+
+    it('should block normal createRoom when teacher has an active class session', () => {
+      const checkCanCreateNormalRoom = (teacherRooms) => {
+        const activeClassSession = teacherRooms.find(r => r.classId && r.isActive && !r.endedAt)
+        if (activeClassSession) {
+          const err = new Error('You already have a live class session. End it before creating a new room.')
+          err.status = 400
+          err.code = 'ACTIVE_CLASS_SESSION_EXISTS'
+          err.activeRoomId = activeClassSession._id
+          throw err
+        }
+        return true
+      }
+
+      const roomsWithActiveClass = [
+        { _id: 'room-c1', classId: 'class-1', isActive: true, endedAt: null }
+      ]
+      expect(() => checkCanCreateNormalRoom(roomsWithActiveClass)).toThrow(
+        'You already have a live class session. End it before creating a new room.'
+      )
+
+      // Only normal rooms active (classId is null) -> normal room creation allowed!
+      const roomsWithNormalActive = [
+        { _id: 'room-n1', classId: null, isActive: true, endedAt: null }
+      ]
+      expect(checkCanCreateNormalRoom(roomsWithNormalActive)).toBe(true)
     })
   })
 

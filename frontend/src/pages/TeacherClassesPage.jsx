@@ -99,6 +99,7 @@ export default function TeacherClassesPage() {
   // Aggregated overview stats
   const totalClasses = classes.length
   const liveSessions = classes.filter(c => c.activeSession).length
+  const hasAnyLiveClassSession = classes.some(c => c.activeSession)
   const totalEnrolled = classes.reduce((sum, c) => sum + (c.totalMembers || 0), 0)
   const totalSessionsRun = classes.reduce((sum, c) => sum + (c.totalSessions || 0), 0)
 
@@ -146,6 +147,25 @@ export default function TeacherClassesPage() {
           boxSizing: 'border-box',
           background: pageWash
         }}>
+          {hasAnyLiveClassSession && (
+            <div style={{
+              padding: '12px 16px',
+              borderRadius: 14,
+              background: 'color-mix(in srgb, #f59e0b 12%, var(--bg-card))',
+              border: '1px solid color-mix(in srgb, #f59e0b 35%, transparent)',
+              color: '#d97706',
+              marginBottom: 20,
+              fontSize: 14,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10
+            }}>
+              <CircleDot size={18} className="app-pulse" color="#d97706" />
+              <span>You have a live class session in progress. End the current live session first.</span>
+            </div>
+          )}
+
           {error && (
             <div style={{
               padding: '12px 16px',

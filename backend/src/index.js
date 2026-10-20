@@ -637,11 +637,26 @@ io.on('connection', (socket) => {
   })
 
   // Class subscriptions for real-time class room events
-  socket.on('class:join', ({ classId }) => {
-    if (classId) socket.join('class:' + classId)
+  socket.on('class:join', (data) => {
+    const classId = typeof data === 'string' ? data : data?.classId
+    if (classId) {
+      const roomKey = `class:${classId}`
+      socket.join(roomKey)
+      if (!socket.data) socket.data = {}
+      if (!socket.data.joinedClasses) socket.data.joinedClasses = new Set()
+      socket.data.joinedClasses.add(roomKey)
+    }
   })
-  socket.on('class:leave', ({ classId }) => {
-    if (classId) socket.leave('class:' + classId)
+
+  socket.on('class:leave', (data) => {
+    const classId = typeof data === 'string' ? data : data?.classId
+    if (classId) {
+      const roomKey = `class:${classId}`
+      socket.leave(roomKey)
+      if (socket.data?.joinedClasses) {
+        socket.data.joinedClasses.delete(roomKey)
+      }
+    }
   })
 
   // Leave room — identity from the authenticated socket.
@@ -748,6 +763,12 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     if (socket.data?._expiryTimer) { clearTimeout(socket.data._expiryTimer); socket.data._expiryTimer = null }
+    if (socket.data?.joinedClasses) {
+      for (const roomKey of socket.data.joinedClasses) {
+        socket.leave(roomKey)
+      }
+      socket.data.joinedClasses.clear()
+    }
     const userId = connectedUsers.get(socket.id)
     connectedUsers.delete(socket.id)
     console.log('Client disconnected:', socket.id, userId ? `(user: ${userId})` : '')

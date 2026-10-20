@@ -21,6 +21,33 @@ import { Ico } from '../components/icons'
 // delay in [0, this) before navigating. Scoring is unaffected — the session is already over.
 const RESULTS_NAV_JITTER_MS = 4000
 
+const normalizeQuestionData = (data) => {
+  if (!data) return null
+  if (data.question && typeof data.question === 'object') {
+    const inner = data.question
+    return {
+      ...inner,
+      _id: inner._id || inner.id || data.questionId || data._id,
+      question: typeof inner.question === 'string' ? inner.question : (inner.question?.question || inner.text || ''),
+      options: inner.options || [],
+      type: inner.type || data.type || 'MCQ',
+      timeToAnswer: inner.timeToAnswer || data.timer || 30,
+      timer: data.timer || inner.timeToAnswer || 30,
+      startTime: data.startTime || Date.now()
+    }
+  }
+  return {
+    ...data,
+    _id: data._id || data.id || data.questionId,
+    question: typeof data.question === 'string' ? data.question : (data.question?.question || data.text || ''),
+    options: data.options || [],
+    type: data.type || 'MCQ',
+    timeToAnswer: data.timeToAnswer || data.timer || 30,
+    timer: data.timer || data.timeToAnswer || 30,
+    startTime: data.startTime || Date.now()
+  }
+}
+
 function StudentRoomPage() {
   const { roomCode } = useParams()
   const navigate = useNavigate()
@@ -101,25 +128,32 @@ function StudentRoomPage() {
     }
   }, [token, socket])
 
-
-
   const handleQuestionStarted = useCallback((data) => {
     if (!data) return
-    setCurrentQuestion(data)
-    setSelectedOptions([])
-    setSubmitted(false)
-    setTimeLeft(data.timer || 30)
-    
-    if (data.question && data.question.timeToAnswer) {
-      setTimeLeft(data.question.timeToAnswer)
-    }
-    
+    const q = normalizeQuestionData(data)
+    if (!q) return
+
     // Clear any existing timer
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current)
       timerIntervalRef.current = null
     }
-    
+
+    setCurrentQuestion(q)
+    setSelectedOptions([])
+    setSubmitted(false)
+
+    let initialTime = q.timer || q.timeToAnswer || 30
+    if (q.startTime && q.timer) {
+      const elapsedSeconds = Math.floor((Date.now() - q.startTime) / 1000)
+      if (elapsedSeconds > 0 && elapsedSeconds < q.timer) {
+        initialTime = q.timer - elapsedSeconds
+      } else if (elapsedSeconds >= q.timer) {
+        initialTime = 1
+      }
+    }
+    setTimeLeft(initialTime)
+
     timerIntervalRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
@@ -157,32 +191,7 @@ function StudentRoomPage() {
 
     const handleNewQuestion = (question) => {
       // Handle manually created questions from teacher
-      // Clear any existing timer
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current)
-        timerIntervalRef.current = null
-      }
-      
-      setCurrentQuestion(question)
-      setSelectedOptions([])
-      setSubmitted(false)
-      setTimeLeft(question.timeToAnswer || 30)
-      
-      timerIntervalRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(timerIntervalRef.current)
-            timerIntervalRef.current = null
-            // Time expired - refresh from MongoDB only if room/user available
-            if (room?._id && user?._id) {
-              fetchPastResponses(room._id, user._id)
-            }
-            setCurrentQuestion(null)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
+      handleQuestionStarted(question)
     }
 
     // Self-heal after a socket reconnect: the store re-joins the room automatically, but a
@@ -240,14 +249,66 @@ function StudentRoomPage() {
     }
   }, [socket, navigate, room?._id])
 
+  const fetchActiveQuestionForRoom = async (roomId, currentQId) => {
+    if (!roomId || !token) return null
+    try {
+      const qRes = await fetch(`${API_URL}/questions?roomId=${roomId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!qRes.ok) return null
+      const qData = await qRes.json()
+      const questions = qData.questions || []
+      if (questions.length === 0) return null
+
+      let targetQ = null
+      if (currentQId) {
+        targetQ = questions.find(q => String(q._id) === String(currentQId))
+      }
+      if (!targetQ && currentQId) {
+        targetQ = questions[0]
+      }
+      if (!targetQ) return null
+
+      if (targetQ.closeAt && new Date(targetQ.closeAt) <= new Date()) {
+        return null
+      }
+
+      if (user?._id) {
+        const rRes = await fetch(`${API_URL}/responses/room/${roomId}/student/${user._id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        if (rRes.ok) {
+          const rData = await rRes.json()
+          const answered = (rData.questions || []).some(
+            p => String(p._id) === String(targetQ._id) && p.answered
+          )
+          if (answered) return null
+        }
+      }
+
+      return targetQ
+    } catch (err) {
+      console.warn('[StudentRoom] Failed to recover active question:', err)
+      return null
+    }
+  }
+
   const joinSession = async () => {
     setIsLoading(true)
     try {
       const roomData = await joinRoomByCode(roomCode)
       setRoom(roomData)
-      if (roomData?.activeQuestion) {
-        handleQuestionStarted(roomData.activeQuestion)
+
+      // Late-join active question recovery: if the room already has a current/active question,
+      // recover it and set it as currentQuestion with timer so the student can still answer.
+      let activeQ = roomData?.activeQuestion || null
+      if (!activeQ && (roomData?.currentQuestion || roomData?._id)) {
+        activeQ = await fetchActiveQuestionForRoom(roomData._id, roomData.currentQuestion)
       }
+      if (activeQ) {
+        handleQuestionStarted(activeQ)
+      }
+
       if (user?._id && socket) {
         // Join via socket - room:joined confirms the student was added to RoomMember
         return new Promise((resolve, reject) => {
@@ -310,8 +371,8 @@ function StudentRoomPage() {
   const handleSubmitAnswer = async () => {
     if (selectedOptions.length === 0 || submitted || !currentQuestion) return
 
-    const questionId = currentQuestion._id || currentQuestion.question?._id
-    const tta = currentQuestion.timeToAnswer || 30
+    const questionId = currentQuestion._id || currentQuestion.id || currentQuestion.questionId || currentQuestion.question?._id
+    const tta = currentQuestion.timeToAnswer || currentQuestion.timer || 30
     // Freeze responseTime at CLICK time. Scoring is based on this value, NOT on when the request
     // is actually sent, so the send-jitter below can never change a student's points.
     const responseTime = tta - timeLeft
@@ -627,13 +688,15 @@ function StudentRoomPage() {
 
               {/* Question */}
               <h2 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', textAlign: 'center', marginBottom: isMobile ? '24px' : '32px', wordBreak: 'break-word' }}>
-                {currentQuestion.question}
+                {typeof currentQuestion.question === 'string'
+                  ? currentQuestion.question
+                  : (currentQuestion.question?.question || currentQuestion.text || '')}
               </h2>
 
               {/* Options */}
               <div style={{ display: 'grid', gap: '12px', marginBottom: '24px' }}>
-                {currentQuestion.options && currentQuestion.options.map((option, index) => {
-                  const isMSQ = currentQuestion.type === 'MSQ'
+                {(currentQuestion.options || currentQuestion.question?.options || []).map((option, index) => {
+                  const isMSQ = (currentQuestion.type || currentQuestion.question?.type) === 'MSQ'
                   const isSelected = isMSQ 
                     ? selectedOptions.includes(index)
                     : selectedOptions.length === 1 && selectedOptions[0] === index

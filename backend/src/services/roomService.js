@@ -6,6 +6,22 @@ import Transcript from '../models/Transcript.js'
 import { invalidateRoomLive } from './roomLiveCache.js'
 
 export const createRoom = async (name, teacherId, settings = {}, classId = null) => {
+  // If teacher already has any live class session, reject creation
+  const activeClassSession = await Room.findOne({
+    teacher: teacherId,
+    classId: { $ne: null },
+    isActive: true,
+    endedAt: null
+  })
+
+  if (activeClassSession) {
+    const err = new Error('You already have a live class session. End it before creating a new room.')
+    err.status = 400
+    err.code = 'ACTIVE_CLASS_SESSION_EXISTS'
+    err.activeRoomId = activeClassSession._id
+    throw err
+  }
+
   const room = new Room({
     name,
     teacher: teacherId,

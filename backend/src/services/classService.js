@@ -143,12 +143,20 @@ export const getClassById = async (classId, user) => {
     }
   }
 
-  // Active session
+  // Active session for this class
   const activeSession = await Room.findOne({
     classId,
     isActive: true,
     endedAt: null
   }).select('_id name code createdAt settings').lean()
+
+  // Global active session for the teacher across ANY class
+  const teacherActiveSession = isTeacherOwner ? await Room.findOne({
+    teacher: user._id,
+    classId: { $ne: null },
+    isActive: true,
+    endedAt: null
+  }).select('_id classId name code createdAt settings').lean() : null
 
   // Counts
   const totalSessions = await Room.countDocuments({ classId })
@@ -171,6 +179,15 @@ export const getClassById = async (classId, user) => {
       code: activeSession.code,
       createdAt: activeSession.createdAt,
       settings: activeSession.settings
+    } : null,
+    hasAnyLiveClassSession: !!teacherActiveSession,
+    teacherActiveSession: teacherActiveSession ? {
+      _id: teacherActiveSession._id,
+      classId: teacherActiveSession.classId,
+      name: teacherActiveSession.name,
+      code: teacherActiveSession.code,
+      createdAt: teacherActiveSession.createdAt,
+      settings: teacherActiveSession.settings
     } : null,
     stats: {
       totalSessions,
@@ -314,15 +331,16 @@ export const createClassSession = async (classId, teacherId, { name, settings = 
     throw err
   }
 
-  // Enforce Product Rule 1: One active session per class
+  // Mentor rule: while the teacher has ANY live class session, they cannot start another session in ANY class.
   const activeSession = await Room.findOne({
-    classId,
+    teacher: teacherId,
+    classId: { $ne: null },
     isActive: true,
     endedAt: null
   })
 
   if (activeSession) {
-    const err = new Error('An active session is already running for this class. End the current live session first.')
+    const err = new Error('You already have a live class session. End it before starting a new one in any class.')
     err.status = 400
     err.code = 'ACTIVE_SESSION_EXISTS'
     err.activeRoomId = activeSession._id

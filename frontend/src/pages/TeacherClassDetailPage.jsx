@@ -79,20 +79,23 @@ export default function TeacherClassDetailPage() {
   // Remove confirmation modal
   const [studentToRemove, setStudentToRemove] = useState(null)
   const [isRemoving, setIsRemoving] = useState(false)
+  const [allClasses, setAllClasses] = useState([])
 
   const fetchClassDetails = async () => {
     try {
-      const [clsRes, sessRes, statsRes, memRes] = await Promise.all([
+      const [clsRes, sessRes, statsRes, memRes, classesRes] = await Promise.all([
         classApi.getById(classId),
         classApi.getSessions(classId),
         classApi.getStats(classId),
-        classApi.getMembers(classId)
+        classApi.getMembers(classId),
+        classApi.getAll().catch(() => ({ classes: [] }))
       ])
 
       setClassData(clsRes)
       setSessions(sessRes.sessions || [])
       setStats(statsRes.stats || null)
       setMembersData(memRes || { active: [], pending: [], removed: [], totalClassSessions: 0 })
+      setAllClasses(classesRes?.classes || [])
     } catch (err) {
       console.error('Failed to load class details:', err)
       setError(err.message || 'Failed to load class details')
@@ -114,15 +117,11 @@ export default function TeacherClassDetailPage() {
     socket.emit('class:join', { classId })
 
     const handleSessionStarted = (data) => {
-      if (String(data.classId) === String(classId)) {
-        fetchClassDetails()
-      }
+      fetchClassDetails()
     }
 
     const handleClassUpdated = (data) => {
-      if (String(data.classId) === String(classId)) {
-        fetchClassDetails()
-      }
+      fetchClassDetails()
     }
 
     const handleMemberUpdated = (data) => {
@@ -146,6 +145,10 @@ export default function TeacherClassDetailPage() {
   const handleStartSession = async (e) => {
     e?.preventDefault()
     if (!sessionName.trim() || isStartingSession) return
+    if (hasAnyLiveClassSession) {
+      setError('End the current live session first.')
+      return
+    }
 
     setIsStartingSession(true)
     setError(null)
@@ -272,6 +275,14 @@ export default function TeacherClassDetailPage() {
   const cls = classData?.class || {}
   const activeSession = classData?.activeSession || null
   const hasActiveSession = !!activeSession
+  const teacherActiveSession = classData?.teacherActiveSession || null
+  const hasAnyLiveClassSession = Boolean(
+    classData?.hasAnyLiveClassSession ||
+    hasActiveSession ||
+    (allClasses && allClasses.some(c => c.activeSession))
+  )
+  const otherClassActiveSession = !hasActiveSession && hasAnyLiveClassSession
+  const activeElsewhereRoomId = teacherActiveSession?._id || allClasses.find(c => c.activeSession)?.activeSession?._id
 
   const activeMembers = membersData.active || []
   const pendingMembers = membersData.pending || []
@@ -409,7 +420,9 @@ export default function TeacherClassDetailPage() {
               hint={
                 hasActiveSession
                   ? 'A live session is currently active for this class. Only one active session is permitted at a time.'
-                  : 'Start a new session under this class. Enrolled students will be notified live and can join with one click.'
+                  : hasAnyLiveClassSession
+                    ? 'A live class session is currently in progress. End the current live session first.'
+                    : 'Start a new session under this class. Enrolled students will be notified live and can join with one click.'
               }
             />
 
@@ -448,7 +461,7 @@ export default function TeacherClassDetailPage() {
                       <CodeChip code={activeSession.code} />
                     </div>
                     <p style={{ margin: '3px 0 0', fontSize: 13, color: '#059669', fontWeight: 600 }}>
-                      End the current live session first before starting another.
+                      End the current live session first.
                     </p>
                   </div>
                 </div>
@@ -467,6 +480,75 @@ export default function TeacherClassDetailPage() {
                   >
                     Open Live Room
                   </button>
+                  <button
+                    type="button"
+                    disabled
+                    title="End the current live session first"
+                    style={primaryButton(true, {
+                      flex: isMobile ? 1 : 'initial',
+                      padding: '10px 16px',
+                      fontSize: 13.5
+                    })}
+                  >
+                    Start New Session
+                  </button>
+                </div>
+              </div>
+            ) : otherClassActiveSession ? (
+              <div style={{
+                padding: '16px 20px',
+                borderRadius: 16,
+                background: 'color-mix(in srgb, #f59e0b 9%, var(--bg-card))',
+                border: '1px solid color-mix(in srgb, #f59e0b 30%, transparent)',
+                display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                alignItems: isMobile ? 'flex-start' : 'center',
+                justifyContent: 'space-between',
+                gap: 14
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: '#f59e0b',
+                    color: '#fff',
+                    flexShrink: 0
+                  }}>
+                    <CircleDot size={20} className="app-pulse" />
+                  </span>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 15, fontWeight: 750, color: 'var(--text-primary)' }}>
+                        Live Session In Another Class
+                      </span>
+                      <Pill tone="#f59e0b" dot>Active elsewhere</Pill>
+                    </div>
+                    <p style={{ margin: '3px 0 0', fontSize: 13, color: '#d97706', fontWeight: 600 }}>
+                      End the current live session first.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: isMobile ? '100%' : 'auto' }}>
+                  {activeElsewhereRoomId && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/teacher/room/${activeElsewhereRoomId}`)}
+                      style={primaryButton(false, {
+                        flex: isMobile ? 1 : 'initial',
+                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        boxShadow: '0 4px 14px rgba(245,158,11,0.35)',
+                        padding: '10px 18px',
+                        fontSize: 13.5
+                      })}
+                    >
+                      Open Live Room
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled
@@ -1197,6 +1279,20 @@ export default function TeacherClassDetailPage() {
                 </div>
               )}
 
+              {hasAnyLiveClassSession && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  background: 'color-mix(in srgb, #ef4444 12%, var(--bg-card))',
+                  border: '1px solid color-mix(in srgb, #ef4444 35%, transparent)',
+                  color: '#ef4444',
+                  fontSize: 13,
+                  fontWeight: 600
+                }}>
+                  End the current live session first.
+                </div>
+              )}
+
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1216,8 +1312,8 @@ export default function TeacherClassDetailPage() {
                 </button>
                 <button
                   type="submit"
-                  style={primaryButton(!sessionName.trim() || isStartingSession)}
-                  disabled={!sessionName.trim() || isStartingSession}
+                  style={primaryButton(hasAnyLiveClassSession || !sessionName.trim() || isStartingSession)}
+                  disabled={hasAnyLiveClassSession || !sessionName.trim() || isStartingSession}
                 >
                   {isStartingSession ? 'Launching...' : 'Launch Session'}
                 </button>

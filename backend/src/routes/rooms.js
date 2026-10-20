@@ -19,7 +19,11 @@ router.post('/', authenticate, authorize('teacher'), requireApprovedTeacher, val
       room
     })
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    res.status(error.status || 500).json({
+      error: error.message,
+      code: error.code,
+      activeRoomId: error.activeRoomId
+    })
   }
 })
 
