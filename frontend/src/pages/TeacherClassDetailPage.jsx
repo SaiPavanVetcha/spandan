@@ -42,9 +42,14 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Award,
-  CircleDot
+  CircleDot,
+  FileText,
+  ClipboardList
 } from 'lucide-react'
+import ClassMaterialsTab from '../components/ClassMaterialsTab'
+import ClassAssignmentsTab from '../components/ClassAssignmentsTab'
 import { Ico, renderIcon } from '../components/icons'
+
 
 export default function TeacherClassDetailPage() {
   const { id: classId } = useParams()
@@ -59,6 +64,7 @@ export default function TeacherClassDetailPage() {
   const [membersData, setMembersData] = useState({ active: [], pending: [], removed: [], totalClassSessions: 0 })
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'materials' | 'assignments'
 
   // Start Session Modal
   const [showSessionModal, setShowSessionModal] = useState(false)
@@ -411,8 +417,91 @@ export default function TeacherClassDetailPage() {
             />
           </TileGrid>
 
-          {/* 2. Start New Session Guard & Actions */}
-          <SectionLabel>Live Session Control</SectionLabel>
+          {/* Tab Navigation: Sessions & Roster | Course Materials | Assignments */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 24,
+            borderBottom: '1px solid var(--border-color)',
+            overflowX: 'auto',
+            paddingBottom: 2
+          }}>
+            <button
+              type="button"
+              onClick={() => setActiveTab('overview')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 18px',
+                borderRadius: '12px 12px 0 0',
+                border: 'none',
+                borderBottom: activeTab === 'overview' ? '3px solid var(--accent)' : '3px solid transparent',
+                background: activeTab === 'overview' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
+                color: activeTab === 'overview' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: activeTab === 'overview' ? 750 : 600,
+                fontSize: 14,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <Library size={16} /> Sessions & Roster
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('materials')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 18px',
+                borderRadius: '12px 12px 0 0',
+                border: 'none',
+                borderBottom: activeTab === 'materials' ? '3px solid var(--accent)' : '3px solid transparent',
+                background: activeTab === 'materials' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
+                color: activeTab === 'materials' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: activeTab === 'materials' ? 750 : 600,
+                fontSize: 14,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <FileText size={16} /> Materials
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('assignments')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 18px',
+                borderRadius: '12px 12px 0 0',
+                border: 'none',
+                borderBottom: activeTab === 'assignments' ? '3px solid var(--accent)' : '3px solid transparent',
+                background: activeTab === 'assignments' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
+                color: activeTab === 'assignments' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: activeTab === 'assignments' ? 750 : 600,
+                fontSize: 14,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <ClipboardList size={16} /> Assignments
+            </button>
+          </div>
+
+          {activeTab === 'overview' && (
+            <>
+              {/* 2. Start New Session Guard & Actions */}
+              <SectionLabel>Live Session Control</SectionLabel>
+
           <div style={{ ...cardStyle(isMobile), marginBottom: 28 }}>
             <SectionHeader
               icon={Play}
@@ -969,8 +1058,29 @@ export default function TeacherClassDetailPage() {
               </div>
             )}
           </div>
+          </>
+          )}
+
+          {activeTab === 'materials' && (
+            <ClassMaterialsTab
+              classId={classId}
+              isTeacher={true}
+              sessions={sessions}
+              isMobile={isMobile}
+            />
+          )}
+
+          {activeTab === 'assignments' && (
+            <ClassAssignmentsTab
+              classId={classId}
+              isTeacher={true}
+              user={user}
+              isMobile={isMobile}
+            />
+          )}
         </div>
       </div>
+
 
       {/* Slide-over / Modal: Person-Wise Performance Panel */}
       {selectedStudent && (

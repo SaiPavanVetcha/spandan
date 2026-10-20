@@ -53,6 +53,57 @@ export const api = {
     return this.handleResponse(response)
   },
 
+  async postFormData(endpoint, formData) {
+    const { token } = useAuthStore.getState()
+    const headers = {
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    }
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: formData
+    })
+    return this.handleResponse(response)
+  },
+
+  async downloadBlob(endpoint, fallbackFilename = 'download') {
+    const { token } = useAuthStore.getState()
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'GET',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    })
+    if (!response.ok) {
+      let errMsg = 'Download failed'
+      try {
+        const errJson = await response.json()
+        errMsg = errJson.error || errMsg
+      } catch (e) {}
+      throw new Error(errMsg)
+    }
+
+    const disposition = response.headers.get('Content-Disposition')
+    let filename = fallbackFilename
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (match && match[1]) {
+        filename = match[1].replace(/['"]/g, '').trim()
+      }
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+    return { success: true, filename }
+  },
+
   async handleResponse(response) {
     const data = await response.json()
 
@@ -110,4 +161,36 @@ export const classApi = {
   updateMember: (id, studentId, action) => api.patch(`/classes/${id}/members/${studentId}`, { action })
 }
 
-export default api
+export const materialApi = {
+  getAll: (classId, sessionId = null) =>
+    api.get(`/classes/${classId}/materials${sessionId ? `?sessionId=${sessionId}` : ''}`),
+  upload: (classId, formData) =>
+    api.postFormData(`/classes/${classId}/materials`, formData),
+  download: (classId, materialId, filename) =>
+    api.downloadBlob(`/classes/${classId}/materials/${materialId}/download`, filename),
+  delete: (classId, materialId) =>
+    api.delete(`/classes/${classId}/materials/${materialId}`)
+}
+
+export const assignmentApi = {
+  getAll: (classId) =>
+    api.get(`/classes/${classId}/assignments`),
+  getById: (classId, assignmentId) =>
+    api.get(`/classes/${classId}/assignments/${assignmentId}`),
+  create: (classId, formData) =>
+    api.postFormData(`/classes/${classId}/assignments`, formData),
+  submit: (classId, assignmentId, formData) =>
+    api.postFormData(`/classes/${classId}/assignments/${assignmentId}/submit`, formData),
+  getSubmissions: (classId, assignmentId) =>
+    api.get(`/classes/${classId}/assignments/${assignmentId}/submissions`),
+  downloadAssignment: (classId, assignmentId, filename) =>
+    api.downloadBlob(`/classes/${classId}/assignments/${assignmentId}/download-assignment`, filename),
+  downloadSubmission: (classId, assignmentId, studentId, filename) =>
+    api.downloadBlob(`/classes/${classId}/assignments/${assignmentId}/submissions/${studentId}/download`, filename),
+  bulkDownload: (classId, assignmentId, filename) =>
+    api.downloadBlob(`/classes/${classId}/assignments/${assignmentId}/submissions/bulk-download`, filename),
+  delete: (classId, assignmentId) =>
+    api.delete(`/classes/${classId}/assignments/${assignmentId}`)
+}
+
+export default api
