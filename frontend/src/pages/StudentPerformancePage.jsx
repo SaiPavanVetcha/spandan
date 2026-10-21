@@ -713,7 +713,7 @@ function PerformanceHighlights({ best, weakest, history, isMobile, navigate }) {
                   <div style={{ borderRadius: 12, padding: 11, background: 'var(--bg-secondary, rgba(127,127,127,.06))' }}><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Accuracy</div><strong style={{ display: 'block', color: 'var(--text-primary)', fontSize: 20, marginTop: 3 }}>{Number(item.accuracy) || 0}%</strong></div>
                   <div style={{ borderRadius: 12, padding: 11, background: 'var(--bg-secondary, rgba(127,127,127,.06))' }}><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Rank</div><strong style={{ display: 'block', color: 'var(--text-primary)', fontSize: 20, marginTop: 3 }}>{formatRank(item.rank)}</strong></div>
                 </div>
-                {item.roomId && <button type="button" className="session-view-button" style={{ marginTop: 14 }} onClick={() => navigate(`/student/room/${item.roomId}/results`)}>◉ View session details</button>}
+                {item.roomId && <button type="button" className="session-view-button" style={{ marginTop: 14 }} onClick={() => navigate(`/student/room/${item.roomId}/results`, { state: { from: 'performance' } })}>◉ View session details</button>}
               </> : <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: 0 }}>This insight will appear when enough completed-session data is available.</p>}
             </div>
           )
@@ -759,6 +759,520 @@ function RecentChangesSection({ history, recent, isMobile }) {
       </div>
     </section>
   )
+}
+
+
+
+// Added analytics: kept separate from existing dashboard sections so the original
+// charts, data calculations, navigation and session history remain untouched.
+function AddedAnalyticsCard({ title, description, children, isMobile, accent = '#4f46e5', compact = false }) {
+  return (
+    <section className="chart-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: compact ? 18 : 22, padding: compact ? (isMobile ? 12 : 15) : (isMobile ? 16 : 22), boxShadow: 'var(--shadow-md)', minWidth: 0, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: compact ? 8 : 10, marginBottom: compact ? 9 : 14 }}>
+        <span aria-hidden="true" style={{ width: compact ? 5 : 7, alignSelf: 'stretch', minHeight: compact ? 32 : 40, borderRadius: 999, background: accent, flexShrink: 0 }} />
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: compact ? 16 : 18, fontWeight: 850 }}>{title}</h2>
+          <p style={{ margin: '4px 0 0', color: 'var(--text-secondary)', fontSize: compact ? 11 : 12, lineHeight: 1.5 }}>{description}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function getSessionAccuracyValue(session) {
+  const attempted = Number(session?.attemptedQuestions) || (Number(session?.correctAnswers || 0) + Number(session?.incorrectAnswers || 0))
+  const correct = Number(session?.correctAnswers) || 0
+  if (attempted > 0) return (correct / attempted) * 100
+  if (session?.accuracy == null || session.accuracy === '') return null
+  const accuracy = Number(session.accuracy)
+  return Number.isFinite(accuracy) && accuracy >= 0 && accuracy <= 100 ? accuracy : null
+}
+
+function getSessionAverageResponseSeconds(session) {
+  const secondsCandidates = [
+    session?.averageResponseTimeSeconds,
+    session?.avgResponseTimeSeconds,
+    session?.meanResponseTimeSeconds,
+    session?.averageResponseTime,
+    session?.avgResponseTime,
+    session?.responseStats?.averageResponseTimeSeconds,
+    session?.responseStats?.averageResponseTime,
+    session?.answeringPattern?.averageResponseTimeSeconds,
+    session?.answeringPattern?.averageResponseTime,
+    session?.timing?.averageResponseTimeSeconds,
+    session?.timing?.averageResponseTime
+  ]
+  for (const candidate of secondsCandidates) {
+    if (candidate != null && candidate !== '' && Number.isFinite(Number(candidate)) && Number(candidate) >= 0) return Number(candidate)
+  }
+  const milliseconds = Number(session?.averageResponseTimeMs ?? session?.avgResponseTimeMs)
+  if (Number.isFinite(milliseconds) && milliseconds >= 0) return milliseconds / 1000
+  return null
+}
+
+function getParticipantCount(session) {
+  const candidates = [
+    session?.participantCount,
+    session?.totalParticipants,
+    session?.participantsCount,
+    session?.rankedParticipants,
+    session?.rankedParticipantCount,
+    session?.totalStudents,
+    session?.attendeeCount,
+    session?.participantTotal,
+    session?.leaderboardCount,
+    session?.participantStats?.total,
+    session?.ranking?.participantCount,
+    session?.ranking?.totalParticipants
+  ]
+  for (const candidate of candidates) {
+    const number = Number(candidate)
+    if (candidate != null && candidate !== '' && Number.isFinite(number) && number > 1) return Math.floor(number)
+  }
+  if (Array.isArray(session?.participants) && session.participants.length > 1) return session.participants.length
+  return null
+}
+
+function AdvancedChartEmpty({ children }) {
+  return <div style={{ minHeight: 150, display: 'grid', placeItems: 'center', textAlign: 'center', padding: 16, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.65 }}>{children}</div>
+}
+
+function AverageResponseTimeChart({ history }) {
+  const values = (history || []).map((session, index) => ({
+    session,
+    index,
+    seconds: getSessionAverageResponseSeconds(session)
+  })).filter(point => point.seconds != null)
+  if (!values.length) return <AdvancedChartEmpty>Per-session response times are not included in the current performance history. The backend must return an average response-time value for each session to plot this accurately; an overall average cannot be split into invented session values.</AdvancedChartEmpty>
+
+  // Heatmap tiles make the relative speed pattern easy to scan without another line or bar chart.
+  const sorted = values.slice(-8)
+  const maxTime = Math.max(1, ...sorted.map(point => point.seconds))
+  const minTime = Math.min(...sorted.map(point => point.seconds))
+  const range = Math.max(1, maxTime - minTime)
+  const tileColor = seconds => {
+    const ratio = (seconds - minTime) / range
+    return ratio < .34 ? '#0d9488' : ratio < .67 ? '#6366f1' : '#f97316'
+  }
+  return <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>Latest up to 8 sessions with recorded response-time data · teal is faster, orange is slower within this set.</div>
+    <div role="img" aria-label="Response time heatmap by session. Each tile shows the recorded average response time in seconds; color compares speed within the displayed sessions." style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(4, sorted.length)}, minmax(0, 1fr))`, gridAutoRows: 'minmax(84px, 1fr)', gap: 9, flex: 1, alignContent: 'stretch' }}>
+      {sorted.map((point, index) => {
+        const color = tileColor(point.seconds)
+        return <div key={`${point.session.roomId || point.session.name || point.index}-${index}`} title={`${point.session.name || `Session ${point.index + 1}`}: ${point.seconds.toFixed(2)} seconds average response time`} style={{ minWidth: 0, minHeight: 84, padding: '12px 7px', borderRadius: 13, background: `${color}16`, border: `1px solid ${color}55`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'center', textAlign: 'center' }}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 10.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getSessionLabel(point.session, point.index, 12)}</span>
+          <strong style={{ color, fontSize: 20, lineHeight: 1.1, fontWeight: 900 }}>{point.seconds.toFixed(1)}s</strong>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 9.5 }}>{point.seconds === minTime ? 'Fastest' : point.seconds === maxTime ? 'Slowest' : 'Avg. time'}</span>
+        </div>
+      })}
+    </div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 14, marginTop: 14, color: 'var(--text-secondary)', fontSize: 10.5 }}>
+      {[['#0d9488', 'Faster'], ['#6366f1', 'Mid-range'], ['#f97316', 'Slower']].map(([color, label]) => <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 3, background: color }} />{label}</span>)}
+    </div>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 10.5, lineHeight: 1.5, marginTop: 8 }}></div>
+  </div>
+}
+
+function getWeekStart(date) {
+  const start = new Date(date)
+  start.setHours(0, 0, 0, 0)
+  const daysSinceMonday = (start.getDay() + 6) % 7
+  start.setDate(start.getDate() - daysSinceMonday)
+  return start
+}
+
+function summarizeAccuracy(sessions) {
+  const attempted = sessions.reduce((sum, session) => sum + (Number(session.attemptedQuestions) || (Number(session.correctAnswers || 0) + Number(session.incorrectAnswers || 0))), 0)
+  const correct = sessions.reduce((sum, session) => sum + (Number(session.correctAnswers) || 0), 0)
+  if (attempted > 0) return correct / attempted * 100
+  const valid = sessions.map(getSessionAccuracyValue).filter(value => value != null && Number.isFinite(value))
+  return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null
+}
+
+function getWeekKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatWeekRange(start) {
+  const end = new Date(start)
+  end.setDate(end.getDate() + 6)
+  const format = value => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(value)
+  return `${format(start)}–${format(end)}`
+}
+
+function WeeklyPerformanceComparison({ history }) {
+  // Compare the two latest calendar weeks that actually contain recorded accuracy data.
+  // Anchoring this chart to available session records prevents it disappearing simply because
+  // no session has happened yet in the current calendar week.
+  const groupedWeeks = new Map()
+  for (const session of history || []) {
+    const rawDate = session?.date ?? session?.endedAt ?? session?.updatedAt ?? session?.createdAt
+    if (!rawDate) continue
+    const date = new Date(rawDate)
+    if (Number.isNaN(date.getTime()) || getSessionAccuracyValue(session) == null) continue
+    const start = getWeekStart(date)
+    const key = getWeekKey(start)
+    if (!groupedWeeks.has(key)) groupedWeeks.set(key, { start, sessions: [] })
+    groupedWeeks.get(key).sessions.push(session)
+  }
+
+  const weeks = [...groupedWeeks.values()]
+    .map(week => ({ ...week, accuracy: summarizeAccuracy(week.sessions) }))
+    .filter(week => week.accuracy != null && Number.isFinite(week.accuracy))
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+
+  if (weeks.length < 2) {
+    return <AdvancedChartEmpty>Week-by-week accuracy appears after your history contains sessions with valid accuracy data in at least two different calendar weeks. A missing week is not treated as 0%.</AdvancedChartEmpty>
+  }
+
+  const previous = weeks[weeks.length - 2]
+  const current = weeks[weeks.length - 1]
+  const todayWeek = getWeekStart(new Date())
+  const latestWeekIsThisCalendarWeek = getWeekKey(current.start) === getWeekKey(todayWeek)
+  const weeksAreAdjacent = (current.start.getTime() - previous.start.getTime()) <= (7 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000)
+  const previousLabel = latestWeekIsThisCalendarWeek && weeksAreAdjacent ? 'Previous week' : 'Previous recorded week'
+  const currentLabel = latestWeekIsThisCalendarWeek ? 'Current week' : 'Latest recorded week'
+  const delta = current.accuracy - previous.accuracy
+  const changeColor = delta > 0 ? '#16a34a' : delta < 0 ? '#ea580c' : '#64748b'
+  const changeLabel = `${delta > 0 ? '+' : ''}${delta.toFixed(1)} percentage points`
+
+  // Compact, responsive chart: no horizontal scroll is needed for two bars.
+  const width = 520, height = 285, left = 54, right = 18, top = 24, bottom = 62
+  const plotH = height - top - bottom
+  const plotW = width - left - right
+  const y = value => top + (100 - Math.max(0, Math.min(100, value))) / 100 * plotH
+  const centers = [left + plotW * 0.29, left + plotW * 0.73]
+  const barW = 76
+  const values = [previous.accuracy, current.accuracy]
+  const fills = ['#94a3b8', delta >= 0 ? '#2563eb' : '#ea580c']
+  const labels = [previousLabel, currentLabel]
+  const ranges = [formatWeekRange(previous.start), formatWeekRange(current.start)]
+
+  return <div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{previousLabel}</div>
+        <div style={{ color: 'var(--text-primary)', fontSize: 22, fontWeight: 900 }}>{previous.accuracy.toFixed(1)}%</div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 10 }}>{ranges[0]}</div>
+      </div>
+      <div style={{ textAlign: 'center', color: changeColor, fontSize: 11, fontWeight: 850, maxWidth: 120 }}>
+        <div style={{ fontSize: 21, lineHeight: 1.1 }}>{delta > 0 ? '↗' : delta < 0 ? '↘' : '→'}</div>
+        <div>{changeLabel}</div>
+      </div>
+      <div style={{ minWidth: 0, textAlign: 'right' }}>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{currentLabel}</div>
+        <div style={{ color: changeColor, fontSize: 22, fontWeight: 900 }}>{current.accuracy.toFixed(1)}%</div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 10 }}>{ranges[1]}</div>
+      </div>
+    </div>
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Week-by-week accuracy comparison. X-axis: recorded week. Y-axis: accuracy percentage. ${previousLabel} ${previous.accuracy.toFixed(1)}%, latest week ${current.accuracy.toFixed(1)}%, change ${changeLabel}.`} style={{ width: '100%', height: 'auto', minWidth: 0, display: 'block' }}>
+      {[0, 25, 50, 75, 100].map(tick => <g key={tick}>
+        <line x1={left} y1={y(tick)} x2={width - right} y2={y(tick)} stroke="var(--border-color)" strokeDasharray="4 5" />
+        <text x={left - 9} y={y(tick) + 4} textAnchor="end" fill="var(--text-secondary)" fontSize="10.5">{tick}%</text>
+      </g>)}
+      {values.map((value, index) => {
+        const barY = y(value)
+        return <g key={index}>
+          <rect x={centers[index] - barW / 2} y={barY} width={barW} height={top + plotH - barY} rx="7" fill={fills[index]} opacity="0.93"><title>{`${labels[index]} (${ranges[index]}): ${value.toFixed(1)}% accuracy, ${[previous, current][index].sessions.length} attended sessions`}</title></rect>
+          <text x={centers[index]} y={Math.max(14, barY - 7)} textAnchor="middle" fill="var(--text-primary)" fontSize="12" fontWeight="850">{value.toFixed(1)}%</text>
+          <text x={centers[index]} y={height - 32} textAnchor="middle" fill="var(--text-secondary)" fontSize="10.5">{index === 0 ? 'Previous' : 'Latest'}</text>
+        </g>
+      })}
+      <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--border-color)" />
+      <line x1={left} y1={top + plotH} x2={width - right} y2={top + plotH} stroke="var(--border-color)" />
+      <text x="15" y={top + plotH / 2} transform={`rotate(-90 15 ${top + plotH / 2})`} textAnchor="middle" fill="var(--text-secondary)" fontSize="11" fontWeight="700">Accuracy (%)</text>
+      <text x={left + plotW / 2} y={height - 7} textAnchor="middle" fill="var(--text-secondary)" fontSize="11" fontWeight="700">Recorded week</text>
+    </svg>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 10.5, lineHeight: 1.5, marginTop: 5 }}>
+      Compared {previous.sessions.length} session{previous.sessions.length === 1 ? '' : 's'} with {current.sessions.length} session{current.sessions.length === 1 ? '' : 's'}. {latestWeekIsThisCalendarWeek ? 'Current calendar week has data.' : 'No accuracy data exists in the current calendar week yet, so the chart uses the latest two recorded weeks.'}
+    </div>
+  </div>
+}
+
+function RankPercentileDistribution({ history }) {
+  const points = (history || []).map((session, index) => {
+    const rank = Number(session?.rank)
+    const participants = getParticipantCount(session)
+    if (!Number.isFinite(rank) || rank < 1 || participants == null || rank > participants) return null
+    const standing = participants > 1 ? ((participants - rank) / (participants - 1)) * 100 : 100
+    const topPercent = Math.max(1, Math.min(100, Math.ceil((rank / participants) * 100)))
+    return { session, index, rank, participants, standing, topPercent }
+  }).filter(Boolean).slice(-8)
+
+  if (!points.length) return <AdvancedChartEmpty>Rank percentile needs a valid rank and participant count. The API's session history should include both values before this chart can calculate a real relative standing.</AdvancedChartEmpty>
+
+  // Radial progress rings provide a different visual form from the dashboard's line, bar and scatter charts.
+  const radius = 28
+  const circumference = 2 * Math.PI * radius
+  return <div style={{ minWidth: 0 }}>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 10.5, marginBottom: 12 }}>Latest {points.length} sessions with rank data · higher relative standing is better.</div>
+    <div className="rank-percentile-grid" role="img" aria-label="Rank percentile radial chart. Each ring shows relative standing from zero to one hundred percent." style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
+      {points.map((point, index) => {
+        const color = point.standing >= 75 ? '#0d9488' : point.standing >= 50 ? '#6366f1' : '#f59e0b'
+        const offset = circumference * (1 - point.standing / 100)
+        return <div key={`${point.session.roomId || point.session.name || index}`} title={`${point.session.name || `Session ${point.index + 1}`}: rank ${point.rank} of ${point.participants}, top ${point.topPercent}%, relative standing ${point.standing.toFixed(1)}%`} style={{ minWidth: 0, padding: '12px 7px', border: '1px solid var(--border-color)', borderRadius: 14, background: 'var(--bg-secondary, rgba(127,127,127,.04))', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
+          <svg viewBox="0 0 76 76" style={{ width: 76, height: 76, display: 'block' }} aria-hidden="true">
+            <circle cx="38" cy="38" r={radius} fill="none" stroke="var(--border-color)" strokeWidth="7" />
+            <circle cx="38" cy="38" r={radius} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} transform="rotate(-90 38 38)" />
+            <text x="38" y="42" textAnchor="middle" fill="var(--text-primary)" fontSize="14" fontWeight="800">{Math.round(point.standing)}%</text>
+          </svg>
+          <strong style={{ color: 'var(--text-primary)', fontSize: 11, textAlign: 'center', overflowWrap: 'anywhere' }}>{getSessionLabel(point.session, point.index, 12)}</strong>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 10 }}>Rank #{point.rank}/{point.participants}</span>
+        </div>
+      })}
+    </div>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 10.5, lineHeight: 1.5, marginTop: 10 }}>Relative standing is calculated from recorded rank and participant count; 100% represents first place.</div>
+  </div>
+}
+
+function WhatIfLab({ history }) {
+  const [mode, setMode] = useState('missed')
+  const [missedExtra, setMissedExtra] = useState(0)
+  const [incorrectExtra, setIncorrectExtra] = useState(0)
+  const eligibleHistory = (history || []).filter(session => session?.attended !== false)
+  const datedHistory = eligibleHistory.filter(session => session?.date && Number.isFinite(Date.parse(session.date)))
+  const latest = datedHistory.length
+    ? datedHistory.reduce((current, session) => Date.parse(session.date) > Date.parse(current.date) ? session : current)
+    : eligibleHistory[eligibleHistory.length - 1] || null
+  const correct = Number(latest?.correctAnswers) || 0
+  const incorrect = Number(latest?.incorrectAnswers) || 0
+  const missed = Number(latest?.missedQuestions) || 0
+  const attempted = Number(latest?.attemptedQuestions) || (correct + incorrect)
+  const totalQuestionsRaw = Number(latest?.totalQuestions)
+  const totalAvailable = Number.isFinite(totalQuestionsRaw) && totalQuestionsRaw > 0 ? totalQuestionsRaw : attempted + missed
+  const actualAccuracy = attempted > 0 ? (correct / attempted) * 100 : null
+  const maxExtra = mode === 'incorrect' ? Math.min(5, incorrect) : missed
+  const storedExtra = mode === 'missed' ? missedExtra : incorrectExtra
+  const extra = Math.min(Math.max(0, storedExtra), maxExtra)
+  const hypotheticalCorrect = correct + extra
+  const hypotheticalAttempted = mode === 'missed' ? attempted + extra : attempted
+  const hypotheticalAccuracy = hypotheticalAttempted > 0 ? (hypotheticalCorrect / hypotheticalAttempted) * 100 : null
+  const buttonStyle = active => ({
+    border: `1px solid ${active ? '#7c3aed' : 'var(--border-color)'}`,
+    background: active ? 'rgba(124,58,237,.09)' : 'var(--bg-secondary, rgba(127,127,127,.04))',
+    color: active ? '#7c3aed' : 'var(--text-primary)',
+    borderRadius: 10,
+    padding: '8px 9px',
+    fontSize: 11,
+    lineHeight: 1.35,
+    fontWeight: 800,
+    cursor: 'pointer',
+    textAlign: 'left',
+    minWidth: 0
+  })
+  const statStyle = { borderRadius: 10, padding: '8px 10px', background: 'var(--bg-secondary, rgba(127,127,127,.06))', minWidth: 0 }
+
+  if (!latest || actualAccuracy == null) return <AdvancedChartEmpty>Complete a session with recorded question counts to use the What-If Lab.</AdvancedChartEmpty>
+
+  return <div style={{ minWidth: 0 }}>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 10.5, marginBottom: 8 }}>Based on: <strong style={{ color: 'var(--text-primary)' }}>{latest.name || 'Most recent session'}</strong></div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 7 }}>
+      <div style={statStyle}><div style={{ color: 'var(--text-secondary)', fontSize: 10.5 }}>Correct</div><div style={{ color: 'var(--text-primary)', fontSize: 21, fontWeight: 900, marginTop: 2 }}>{correct}</div></div>
+      <div style={statStyle}><div style={{ color: 'var(--text-secondary)', fontSize: 10.5 }}>Attempted</div><div style={{ color: 'var(--text-primary)', fontSize: 21, fontWeight: 900, marginTop: 2 }}>{attempted}</div></div>
+      <div style={statStyle}><div style={{ color: 'var(--text-secondary)', fontSize: 10.5 }}>Unanswered</div><div style={{ color: 'var(--text-primary)', fontSize: 21, fontWeight: 900, marginTop: 2 }}>{missed}</div></div>
+    </div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginTop: 6, color: 'var(--text-secondary)', fontSize: 10.5 }}>
+      <span>{totalAvailable} questions available</span><span>{incorrect} incorrect answers</span>
+    </div>
+
+    <div style={{ borderTop: '1px solid var(--border-color)', margin: '12px 0 10px' }} />
+    <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 850, marginBottom: 8 }}>Try a what-if scenario</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 7, marginBottom: 10 }}>
+      <button type="button" aria-pressed={mode === 'missed'} style={buttonStyle(mode === 'missed')} onClick={() => setMode('missed')}>
+        Answer missed correctly<span style={{ display: 'block', marginTop: 3, fontWeight: 600, opacity: .8 }}>{missed} unanswered</span>
+      </button>
+      <button type="button" aria-pressed={mode === 'incorrect'} style={buttonStyle(mode === 'incorrect')} onClick={() => setMode('incorrect')}>
+        Turn incorrect correct<span style={{ display: 'block', marginTop: 3, fontWeight: 600, opacity: .8 }}>{incorrect} incorrect · change up to 5</span>
+      </button>
+    </div>
+
+    {maxExtra > 0 ? <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <label htmlFor="what-if-extra" style={{ color: 'var(--text-secondary)', fontSize: 11, fontWeight: 700, lineHeight: 1.4 }}>{mode === 'missed' ? 'Missed answers changed to correct' : 'Incorrect answers changed to correct'}</label>
+        <strong style={{ color: 'var(--text-primary)', fontSize: 14, flexShrink: 0 }}>{extra}/{maxExtra}</strong>
+      </div>
+      <input
+        id="what-if-extra"
+        type="range"
+        min="0"
+        max={maxExtra}
+        step="1"
+        value={extra}
+        onChange={event => mode === 'missed' ? setMissedExtra(Number(event.target.value)) : setIncorrectExtra(Number(event.target.value))}
+        aria-label={mode === 'missed' ? 'Number of unanswered questions hypothetically answered correctly' : 'Number of incorrect answers hypothetically corrected, up to five'}
+        style={{ display: 'block', width: '100%', accentColor: '#7c3aed', cursor: 'pointer', margin: '5px 0 0' }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: 'var(--text-secondary)', fontSize: 10, marginTop: 2 }}><span>0 changed</span><span>{mode === 'incorrect' ? `Maximum 5 (${incorrect} available)` : `${missed} available`}</span></div>
+    </> : <div style={{ padding: 9, borderRadius: 9, background: 'var(--bg-secondary, rgba(127,127,127,.06))', color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>
+      {mode === 'missed' ? 'There are no unanswered questions in this session. Select the other scenario to explore incorrect answers.' : 'There are no incorrect answers in this session. Select the other scenario to explore unanswered questions.'}
+    </div>}
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 7, marginTop: 11 }}>
+      <div style={{ padding: '9px 10px', border: '1px solid var(--border-color)', borderRadius: 10 }}><div style={{ color: 'var(--text-secondary)', fontSize: 10.5 }}>Actual accuracy</div><div style={{ color: 'var(--text-primary)', fontSize: 22, fontWeight: 900, marginTop: 2 }}>{actualAccuracy.toFixed(1)}%</div></div>
+      <div style={{ padding: '9px 10px', border: '1px solid rgba(22,163,74,.35)', borderRadius: 10, background: 'rgba(22,163,74,.045)' }}><div style={{ color: 'var(--text-secondary)', fontSize: 10.5 }}>What-if accuracy</div><div style={{ color: '#16a34a', fontSize: 22, fontWeight: 900, marginTop: 2 }}>{hypotheticalAccuracy == null ? '—' : `${hypotheticalAccuracy.toFixed(1)}%`}</div><div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>{hypotheticalAccuracy != null ? `${hypotheticalAccuracy - actualAccuracy >= 0 ? '+' : ''}${(hypotheticalAccuracy - actualAccuracy).toFixed(1)} pp` : '—'}</div></div>
+    </div>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.45, marginTop: 7 }}>Simulation only. It does not change saved results or predict the official Spandan score or rank.</div>
+  </div>
+}
+
+function SessionToSessionScoreChangeChart({ history }) {
+  // Include every attended session with a valid recorded score; do not truncate the history.
+  const sessions = (history || [])
+    .filter(session => session?.score != null && session.score !== '' && Number.isFinite(Number(session.score)) && Number(session.score) >= 0 && Number(session.score) <= 100)
+    .map((session, index) => ({
+      name: session.name || `Session ${index + 1}`,
+      score: Number(session.score)
+    }))
+  const changes = sessions.slice(1).map((session, index) => ({
+    name: session.name,
+    previousName: sessions[index].name,
+    change: Math.round((session.score - sessions[index].score) * 10) / 10
+  }))
+  if (changes.length < 1) {
+    return <AdvancedChartEmpty>Session-to-session changes need at least two recorded session scores. Complete more sessions to compare your results.</AdvancedChartEmpty>
+  }
+  const maxAbs = Math.max(5, Math.ceil(Math.max(...changes.map(point => Math.abs(point.change))) / 5) * 5)
+  // Give each session enough horizontal room; the wrapper below scrolls on narrower cards.
+  const width = Math.max(760, changes.length * 88 + 110)
+  const height = 250
+  const left = 44
+  const right = 14
+  const top = 20
+  const bottom = 52
+  const plotWidth = width - left - right
+  const plotHeight = height - top - bottom
+  const zeroY = top + plotHeight / 2
+  const xAt = index => left + ((index + 0.5) / changes.length) * plotWidth
+  const yAt = value => zeroY - (value / maxAbs) * (plotHeight / 2)
+  return <div style={{ minWidth: 0 }}>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>Each bar compares the named session with the previous attended session. Hover over a bar for both session names and the exact change.</div>
+    <div className="advanced-chart-scroll" style={{ minWidth: 0 }}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Score change compared with the previous session; positive means an increase and negative means a decrease" style={{ width: `${width}px`, minWidth: `${width}px`, height: 'auto', display: 'block' }}>
+        {[-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs].map((tick, index) => {
+          const y = yAt(tick)
+          return <g key={`${tick}-${index}`}>
+            <line x1={left} y1={y} x2={width - right} y2={y} stroke="var(--border-color)" strokeDasharray={tick === 0 ? '0' : '4 4'} strokeWidth={tick === 0 ? 1.5 : 1} />
+            <text x={left - 7} y={y + 4} textAnchor="end" fontSize="10" fill="var(--text-secondary)">{tick > 0 ? `+${tick}` : tick}</text>
+          </g>
+        })}
+        {changes.map((point, index) => {
+          const x = xAt(index)
+          const y = yAt(point.change)
+          const color = point.change > 0 ? '#16a34a' : point.change < 0 ? '#ef4444' : '#94a3b8'
+          return <g key={`${point.name}-${index}`}>
+            <rect x={x - Math.min(17, plotWidth / changes.length * 0.28)} y={Math.min(y, zeroY)} width={Math.min(34, plotWidth / changes.length * 0.56)} height={Math.max(2, Math.abs(zeroY - y))} rx="5" fill={color} opacity="0.82">
+              <title>{`${point.name}: ${point.change > 0 ? '+' : ''}${point.change} points versus ${point.previousName}`}</title>
+            </rect>
+            <circle cx={x} cy={y} r="3.5" fill={color} stroke="var(--bg-card)" strokeWidth="1.5" />
+            <text x={x} y={point.change >= 0 ? Math.max(top + 10, y - 8) : Math.min(top + plotHeight - 2, y + 14)} textAnchor="middle" fontSize="10" fontWeight="800" fill={color}>{point.change > 0 ? '+' : ''}{point.change}</text>
+            <text x={x} y={height - 28} textAnchor="middle" fontSize="10" fill="var(--text-secondary)">{point.name.length > 10 ? `${point.name.slice(0, 9)}…` : point.name}</text>
+          </g>
+        })}
+        <text x={left + plotWidth / 2} y={height - 8} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--text-secondary)">Attended session</text>
+      </svg>
+    </div>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8, color: 'var(--text-secondary)', fontSize: 11 }}>
+      <span><span style={{ color: '#16a34a', fontWeight: 900 }}>●</span> Score increased</span>
+      <span><span style={{ color: '#ef4444', fontWeight: 900 }}>●</span> Score decreased</span>
+      <span><span style={{ color: '#94a3b8', fontWeight: 900 }}>●</span> No change</span>
+    </div>
+  </div>
+}
+
+function SessionConsistencyGauge({ history }) {
+  const scores = (history || [])
+    .map(session => session?.score)
+    .filter(value => value != null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100)
+    .map(Number)
+
+  if (scores.length < 2) {
+    return <AdvancedChartEmpty>Session consistency needs at least two recorded session scores. Complete more sessions to see how steadily your scores are performing.</AdvancedChartEmpty>
+  }
+
+  const average = scores.reduce((sum, score) => sum + score, 0) / scores.length
+  const variance = scores.reduce((sum, score) => sum + (score - average) ** 2, 0) / scores.length
+  const standardDeviation = Math.sqrt(variance)
+  // Consistency index is 100 minus the population standard deviation in score percentage points.
+  const consistency = Math.max(0, Math.min(100, 100 - standardDeviation))
+  const status = standardDeviation <= 5
+    ? { label: 'Very consistent', color: '#16a34a', detail: 'Your scores have varied only slightly across sessions.' }
+    : standardDeviation <= 10
+      ? { label: 'Fairly consistent', color: '#0d9488', detail: 'Your scores show some variation, but remain relatively steady.' }
+      : { label: 'Scores vary', color: '#d97706', detail: 'Your scores have varied noticeably between sessions.' }
+
+  return <div style={{ minWidth: 0 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, alignItems: 'center' }}>
+      <div style={{ minWidth: 0, textAlign: 'center' }}>
+        <svg viewBox="0 0 200 126" role="img" aria-label={`Session consistency ${consistency.toFixed(1)} out of 100, based on ${scores.length} session scores. Standard deviation ${standardDeviation.toFixed(1)} percentage points.`} style={{ width: '100%', maxWidth: 250, display: 'block', margin: '0 auto' }}>
+          <path d="M 24 104 A 76 76 0 0 1 176 104" fill="none" stroke="var(--bg-secondary, #e5e7eb)" strokeWidth="15" strokeLinecap="round" pathLength="100" />
+          <path d="M 24 104 A 76 76 0 0 1 176 104" fill="none" stroke={status.color} strokeWidth="15" strokeLinecap="round" pathLength="100" strokeDasharray={`${consistency} 100`} />
+          <text x="100" y="76" textAnchor="middle" fontSize="29" fontWeight="900" fill="var(--text-primary)">{Math.round(consistency)}</text>
+          <text x="100" y="94" textAnchor="middle" fontSize="10.5" fontWeight="700" fill="var(--text-secondary)">OUT OF 100</text>
+          <text x="23" y="122" textAnchor="middle" fontSize="10" fill="var(--text-secondary)">0</text>
+          <text x="177" y="122" textAnchor="middle" fontSize="10" fill="var(--text-secondary)">100</text>
+        </svg>
+        <div style={{ color: status.color, fontSize: 13, fontWeight: 850, marginTop: 0 }}>{status.label}</div>
+      </div>
+      <div style={{ display: 'grid', gap: 9, minWidth: 0 }}>
+        <div style={{ borderRadius: 12, padding: 12, background: 'var(--bg-secondary, rgba(127,127,127,.06))' }}>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Average score</div>
+          <strong style={{ display: 'block', marginTop: 3, color: 'var(--text-primary)', fontSize: 23 }}>{average.toFixed(1)}%</strong>
+        </div>
+        <div style={{ borderRadius: 12, padding: 12, background: 'var(--bg-secondary, rgba(127,127,127,.06))' }}>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Score variation (standard deviation)</div>
+          <strong style={{ display: 'block', marginTop: 3, color: 'var(--text-primary)', fontSize: 23 }}>{standardDeviation.toFixed(1)} pp</strong>
+        </div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.5 }}>{scores.length} recorded session scores</div>
+      </div>
+    </div>
+    <p style={{ margin: '10px 0 0', color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.55 }}>
+      {status.detail} Consistency index = 100 − score standard deviation (in percentage points). A
+    </p>
+  </div>
+}
+
+function AddedAnalyticsSection({ history, isMobile }) {
+  const attended = (history || []).filter(session => session?.attended)
+  return <>
+    <style>{`
+      .advanced-chart-scroll { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.75) rgba(148,163,184,.12); -webkit-overflow-scrolling: touch; }
+      .advanced-chart-scroll::-webkit-scrollbar { height: 9px; }
+      .advanced-chart-scroll::-webkit-scrollbar-track { background: rgba(148,163,184,.12); border-radius: 999px; }
+      .advanced-chart-scroll::-webkit-scrollbar-thumb { background: rgba(100,116,139,.75); border-radius: 999px; }
+      .advanced-chart-scroll { scrollbar-gutter: stable; }
+      .rank-percentile-grid > div { height: 100%; box-sizing: border-box; }
+      @media (max-width: 640px) {
+        .rank-percentile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+      }
+    `}</style>
+    <section aria-label="Additional performance comparisons" style={{ marginTop: 24, marginBottom: 22 }}>
+      <div style={{ marginBottom: 14 }}>
+        <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: isMobile ? 21 : 24, letterSpacing: '-0.03em' }}>Advanced Performance Lab</h2>
+        <p style={{ margin: '5px 0 0', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.55 }}></p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 16, alignItems: 'stretch' }}>
+        <AddedAnalyticsCard title="What-If Lab" description="Explore hypothetical changes to your accuracy without changing saved results." isMobile={isMobile} accent="#7c3aed" compact>
+          <WhatIfLab history={attended} />
+        </AddedAnalyticsCard>
+        <AddedAnalyticsCard title="Week-by-Week Accuracy Comparison" description="Two bars compare accuracy across equivalent periods of this week and last week, with an arrow showing the change." isMobile={isMobile} accent="#2563eb">
+          <WeeklyPerformanceComparison history={attended} />
+        </AddedAnalyticsCard>
+        <AddedAnalyticsCard title="Rank Percentile Distribution" description="Radial progress rings compare your relative standing across sessions." isMobile={isMobile} accent="#0d9488">
+          <RankPercentileDistribution history={attended} />
+        </AddedAnalyticsCard>
+        <AddedAnalyticsCard title="Average Response Time per Session" description="Same response-time heatmap, showing the latest eight recorded sessions." isMobile={isMobile} accent="#0d9488">
+          <AverageResponseTimeChart history={attended} />
+        </AddedAnalyticsCard>
+        <AddedAnalyticsCard title="Session Consistency Gauge" description="Measure how steadily your recorded session scores perform over time." isMobile={isMobile} accent="#16a34a">
+          <SessionConsistencyGauge history={attended} />
+        </AddedAnalyticsCard>
+        <AddedAnalyticsCard title="Session-to-Session Score Change" description="See how your score rises or falls compared with the previous attended session." isMobile={isMobile} accent="#2563eb">
+          <SessionToSessionScoreChangeChart history={attended} />
+        </AddedAnalyticsCard>
+      </div>
+    </section>
+  </>
 }
 
 function StudentPerformancePage() {
@@ -936,9 +1450,7 @@ function StudentPerformancePage() {
           isolation: isolate;
           overflow: hidden;
           border-bottom: 1px solid rgba(255,255,255,.14);
-          background:
-            radial-gradient(circle at 86% 18%, rgba(255,255,255,.16), transparent 24%),
-            linear-gradient(135deg, #0b1220 0%, #253bce 48%, #6d28d9 100%) !important;
+          background: #192f59 !important;
           box-shadow: 0 16px 44px rgba(15,23,42,.18) !important;
         }
 
@@ -1520,7 +2032,7 @@ function StudentPerformancePage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
               <div style={{ paddingLeft: isMobile ? 48 : 0, minWidth: 0 }}>
                 <div style={{ fontSize: 12, opacity: 0.78, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700 }}>Student Analytics</div>
-                <h1 style={{ margin: '7px 0 0', fontSize: isMobile ? 23 : 30, lineHeight: 1.15, letterSpacing: '-0.035em' }}>Student Performance Journey</h1>
+                <h1 style={{ margin: '7px 0 0', fontSize: isMobile ? 23 : 30, lineHeight: 1.15, letterSpacing: '-0.035em' }}>My Growth</h1>
                 <p style={{ margin: '8px 0 0', opacity: 0.86, fontSize: 14 }}>Track your progress and keep improving with every completed live session.</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1595,6 +2107,8 @@ function StudentPerformancePage() {
                 <PerformanceHighlights best={summary?.bestPerformance} weakest={summary?.weakestPerformance} history={attendedHistory} isMobile={isMobile} navigate={navigate} />
 
                 <AnsweringPatternSection summary={summary} history={history} answeringPattern={answeringPattern} isMobile={isMobile} />
+
+                <AddedAnalyticsSection history={attendedHistory} isMobile={isMobile} />
 
 
               </>

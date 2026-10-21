@@ -2,9 +2,12 @@ import express from 'express'
 import { authenticate, authorize } from '../middleware/auth.js'
 import { isBatchEnabled, bufferResponse } from '../services/responseBuffer.js'
 import * as resultsSnapshot from '../services/resultsSnapshot.js'
+import { PICKS_EXPR, buildQuestionStats } from '../services/questionStats.js'
 import { computeRankedIncremental } from '../services/leaderboardCache.js'
 import { anonymizeBoard, buildStudentBoard } from '../services/anonymizeLeaderboard.js'
 import { checkRoomOwnership } from '../utils/roomOwnership.js'
+import { computeInsights } from '../services/insightsService.js'
+import { getInsightsBody, roomVersion } from '../services/insightsCache.js'
 import { debug } from '../utils/debug.js'
 import { computeRanked } from '../services/leaderboardAgg.js'
 
@@ -1030,13 +1033,11 @@ router.get('/stats/room/:roomId', async (req, res) => {
     const mongoose = (await import('mongoose')).default
     const roomObjId = new mongoose.Types.ObjectId(roomId)
 
-    const [
-      totalResponses,
-      uniqueStudents,
-      totalJoined,
-      questions,
-      grouped
-    ] = await Promise.all([
+    // Merge both implementations: keep the custom questionStats response shape used by this
+    // branch (answerCounts, correctCount, totalResponses), while using the main branch's grouped
+    // aggregation so every selected option is counted correctly for MSQ questions too.
+    // This remains one aggregation rather than a per-question query loop.
+    const [totalResponses, uniqueStudents, totalJoined, questions, grouped] = await Promise.all([
       Response.countDocuments({ roomId }),
       Response.distinct('studentId', { roomId }),
       RoomMember.countDocuments({ roomId }),
@@ -1045,53 +1046,51 @@ router.get('/stats/room/:roomId', async (req, res) => {
         { $match: { roomId: roomObjId } },
         {
           $group: {
-            _id: {
-              q: '$questionId',
-              opt: '$selectedOption'
-            },
-            count: { $sum: 1 }
+            _id: '$questionId',
+            total: { $sum: 1 },
+            correct: { $sum: { $cond: ['$isCorrect', 1, 0] } },
+            picks: { $push: PICKS_EXPR }
           }
         }
       ])
     ])
 
-    const countsByQuestion = new Map()
-    const totalByQuestion = new Map()
-
+    const tallies = new Map()
     for (const g of grouped) {
-      const qid = g._id.q ? g._id.q.toString() : null
-      if (!qid) continue
-
-      let m = countsByQuestion.get(qid)
-      if (!m) {
-        m = new Map()
-        countsByQuestion.set(qid, m)
+      if (!g._id) continue
+      const optionCounts = new Map()
+      for (const picks of g.picks) {
+        for (const optionIndex of picks) {
+          if (Number.isInteger(optionIndex)) {
+            optionCounts.set(optionIndex, (optionCounts.get(optionIndex) || 0) + 1)
+          }
+        }
       }
-
-      m.set(g._id.opt, g.count)
-      totalByQuestion.set(
-        qid,
-        (totalByQuestion.get(qid) || 0) + g.count
-      )
+      tallies.set(g._id.toString(), {
+        total: g.total,
+        correct: g.correct,
+        opts: optionCounts
+      })
     }
 
-    const questionStats = questions.map(q => {
-      const perOption = countsByQuestion.get(q._id.toString()) || new Map()
+    // Preserve this branch's API fields so the existing frontend continues to work.
+    const questionStats = questions.map(question => {
+      const tally = tallies.get(question._id.toString()) || {
+        total: 0,
+        correct: 0,
+        opts: new Map()
+      }
       const answerCounts = {}
-      let correctCount = 0
-
-      q.options.forEach((opt, idx) => {
-        const c = perOption.get(idx) || 0
-        answerCounts[idx] = c
-        if (opt.isCorrect) correctCount += c
+      question.options.forEach((option, index) => {
+        answerCounts[index] = tally.opts.get(index) || 0
       })
 
       return {
-        questionId: q._id,
-        question: q.question,
-        type: q.type,
-        totalResponses: totalByQuestion.get(q._id.toString()) || 0,
-        correctCount,
+        questionId: question._id,
+        question: question.question,
+        type: question.type,
+        totalResponses: tally.total,
+        correctCount: tally.correct,
         answerCounts
       }
     })
@@ -1348,10 +1347,65 @@ router.post('/leaderboard/:roomId/segment-done', async (req, res) => {
   }
 })
 
-// -----------------------------------------------------------------------------
-// GET /api/responses/leaderboard/:roomId
-// -----------------------------------------------------------------------------
+// GET /api/responses/insights/:roomId - session insights for the results page (one aggregated payload:
+// totals, timeline, join curve, per-question item analysis, score distribution, segments; teachers also
+// get the student×question heatmap and names). Teacher = room owner (full); student = room member (class
+// aggregates only); anyone else 403.
+router.get('/insights/:roomId', async (req, res) => {
+  try {
+    const mongoose = (await import('mongoose')).default
+    const Room = (await import('../models/Room.js')).default
+    const Question = (await import('../models/Question.js')).default
+    const Response = (await import('../models/Response.js')).default
+    const RoomMember = (await import('../models/RoomMember.js')).default
+    const Transcript = (await import('../models/Transcript.js')).default
+    const User = (await import('../models/User.js')).default
+    const { roomId } = req.params
+    if (!mongoose.Types.ObjectId.isValid(roomId)) return res.status(400).json({ error: 'Invalid room id' })
+    const room = await Room.findById(roomId).lean()
+    if (!room) return res.status(404).json({ error: 'Room not found' })
+    // Access, same rules as the other results reads: the OWNING teacher (checkRoomOwnership) gets the
+    // full payload at any time; a student only if they are a member of this room AND the room has
+    // ended (the payload carries every correct option and explanation, so it must never be readable
+    // while a poll could still be live). Anyone else → 403. authenticate() already runs for every
+    // /api/responses route (mounted in index.js) and rejects unapproved teachers.
+    const isTeacher = req.user.role === 'teacher' && checkRoomOwnership(room, req.user._id).ok
+    if (!isTeacher) {
+      if (req.user.role !== 'student') return res.status(403).json({ error: 'Not authorized to view this room' })
+      const member = await RoomMember.findOne({ roomId, studentId: req.user._id }).lean()
+      if (!member) return res.status(403).json({ error: 'Not authorized to view this room' })
+      if (!room.endedAt) return res.status(403).json({ error: 'Results are available once the room has ended' })
+    }
 
+    // Ended rooms: served from the once-per-room insights cache (memory, plus Redis when connected),
+    // so the end-of-session rush doesn't re-read and recompute the whole room per viewer. A miss
+    // (live room, Redis down AND build failed, or a student not in the cached build) falls through
+    // to the direct compute below.
+    const cached = await getInsightsBody(roomId, { ended: !!room.endedAt, role: isTeacher ? 'teacher' : 'student', studentId: req.user._id, version: roomVersion(room) })
+    if (cached) return res.type('json').send(cached)
+
+    const [questions, responses, members, transcripts] = await Promise.all([
+      Question.find({ roomId }).lean(),
+      Response.find({ roomId }).select('questionId studentId selectedOption selectedOptions isCorrect responseTime points createdAt').lean(),
+      RoomMember.find({ roomId }).select('studentId joinedAt').lean(),
+      Transcript.find({ roomId }).select('segmentIndex wordCount duration').lean()
+    ])
+    let usersById = new Map()
+    if (isTeacher) {
+      const ids = [...new Set([...responses.map((r) => String(r.studentId)), ...members.map((m) => String(m.studentId))])]
+      const users = await User.find({ _id: { $in: ids } }).select('name email').lean()
+      usersById = new Map(users.map((u) => [String(u._id), u]))
+    }
+    const insights = computeInsights({ room, questions, responses, members, transcripts, usersById, forTeacher: isTeacher, studentId: isTeacher ? null : req.user._id })
+    res.json({ success: true, role: isTeacher ? 'teacher' : 'student', ...insights })
+  } catch (error) {
+    console.error('Error computing insights:', error)
+    res.status(500).json({ success: false, error: 'Failed to compute insights' })
+  }
+})
+
+// GET /api/responses/leaderboard/:roomId - Get ranked leaderboard for a room
+// Authorization: teacher (owner's room) sees full, students (joined room) see top 3 only
 router.get('/leaderboard/:roomId', async (req, res) => {
   try {
     const Room = (await import('../models/Room.js')).default

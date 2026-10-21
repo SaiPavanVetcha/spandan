@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useRoomStore from '../stores/roomStore'
 import Sidebar from '../components/Sidebar'
-import ThemeToggle from '../components/ThemeToggle'
-import ProfileDropdown from '../components/ProfileDropdown'
+import { PageHeader } from '../components/AppUI'
 import { API_URL } from '../config.js'
 import { fetchAllRoomQuestions } from '../services/questionService'
 import useIsMobile from '../hooks/useIsMobile'
+import RoomInsights from '../components/RoomInsights'
+import StudentInsights from '../components/StudentInsights'
+import { downloadText, safeFilename } from '../lib/questionsExport'
 
 function RoomResultsPage() {
   const { roomId } = useParams()
@@ -20,6 +22,8 @@ function RoomResultsPage() {
   const [questions, setQuestions] = useState([])
   const [responses, setResponses] = useState({})
   const [isLoading, setIsLoading] = useState(true)
+  const [insights, setInsights] = useState(null)   // GET /responses/insights/:roomId (teacher: full, student: own results vs class)
+  const [insightsFailed, setInsightsFailed] = useState(false) // → show the plain summary cards + question list instead
   const [stats, setStats] = useState({
     totalResponses: 0,
     totalCorrect: 0,
@@ -45,6 +49,15 @@ function RoomResultsPage() {
       if (roomRes.ok) {
         setRoom(roomData.room || roomData)
       }
+
+      // Session insights (one aggregated payload). Non-fatal: if it fails, the page falls back to the
+      // plain summary cards and question list.
+      setInsights(null)
+      setInsightsFailed(false)
+      fetch(`${API_URL}/responses/insights/${roomId}`, { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => { if (d?.success) setInsights(d); else setInsightsFailed(true) })
+        .catch(() => setInsightsFailed(true))
 
       if (user?.role === 'student') {
         // Student: fetch their own responses (includes questions with answers)
@@ -147,6 +160,26 @@ function RoomResultsPage() {
     }
   }
 
+  const exportResponsesCsv = async () => {
+    try {
+      const res = await fetch(`${API_URL}/responses/room/${roomId}/export`, { headers: { 'Authorization': `Bearer ${token}` } })
+      if (!res.ok) throw new Error('Export failed')
+      downloadText(safeFilename(`${room?.name || 'room'}_${room?.code || ''}_responses`) + '.csv', await res.text(), 'text/csv')
+    } catch (e) {
+      window.alert('Could not download the responses CSV. Please try again.')
+    }
+  }
+
+  // Return to the page that opened these results.
+  const location = useLocation()
+  const handleBack = () => {
+    if (location.state?.from === 'performance') {
+      navigate('/student/performance')
+    } else {
+      navigate('/student/room-history')
+    }
+  }
+
   if (isLoading) {
     return (
       <div style={{
@@ -176,7 +209,8 @@ function RoomResultsPage() {
     )
   }
 
-  // Stat cards config — same data, presented uniformly. Role-specific 3rd card handled inline.
+  // Fallback summary cards — only shown if the insights call failed. Normally each role's single tile
+  // row lives in RoomInsights / StudentInsights (one source of numbers, no duplicates).
   const statCards = [
     { icon: '📝', value: questions.length, label: 'Total Questions', tint: 'var(--accent)' },
     { icon: '👥', value: stats.totalResponses, label: 'Total Responses', tint: 'var(--accent)' },
@@ -207,51 +241,22 @@ function RoomResultsPage() {
         maxWidth: '100%',
         boxSizing: 'border-box'
       }}>
-        {/* Header */}
-        <header style={{
-          background: 'var(--header-bg)',
-          color: 'white',
-          padding: isMobile ? '20px 16px' : '24px 32px',
-          paddingLeft: isMobile ? '64px' : '32px',
-          boxSizing: 'border-box'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1 style={{
-                margin: 0,
-                fontSize: isMobile ? '22px' : '26px',
-                fontWeight: 700,
-                letterSpacing: '-0.02em',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                <span aria-hidden="true">📊</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {room?.name || 'Room'} Results
-                </span>
-              </h1>
-              <p style={{ margin: '6px 0 0', opacity: 0.9, fontSize: '14px' }}>
-                Code: {room?.code} • Completed
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <ThemeToggle />
-              <ProfileDropdown />
-            </div>
-          </div>
-        </header>
+        <PageHeader isMobile={isMobile} icon="📊" eyebrow="Session results" title={room?.name || 'Room'}
+          subtitle={<>Code <strong style={{ letterSpacing: '0.1em' }}>{room?.code}</strong> · Completed{room?.endedAt ? ` · ${new Date(room.endedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</>} />
 
-        {/* Content */}
+        {/* Content (faint accent wash behind the results) */}
         <div style={{
           flex: 1,
+          background: 'radial-gradient(900px 360px at 0% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%), radial-gradient(700px 300px at 100% 0%, color-mix(in srgb, #8b5cf6 6%, transparent), transparent 70%)',
           padding: isMobile ? '16px' : '32px',
           maxWidth: '100%',
           boxSizing: 'border-box'
         }}>
           {/* Back Button */}
+
+      
           <button
-            onClick={() => navigate('/student/performance')}
+            onClick={handleBack}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -260,7 +265,7 @@ function RoomResultsPage() {
               background: 'var(--bg-card)',
               color: 'var(--text-secondary)',
               border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: '12px',
               fontSize: '14px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -271,8 +276,9 @@ function RoomResultsPage() {
             ← Back
           </button>
 
-          {/* Overview Stats */}
-          <div style={{
+          {/* Fallback overview stats (insights unavailable) */}
+          {insightsFailed && (
+          <div data-tour="results-stats" style={{
             display: 'grid',
             gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(160px, 1fr))',
             gap: '16px',
@@ -318,9 +324,21 @@ function RoomResultsPage() {
               </div>
             ))}
           </div>
+          )}
 
-          {/* Questions Analysis */}
-          <div style={{
+          {/* Session insights — teachers get the class analytics (and the collapsible item analysis replaces the
+              old question list below); students get THEIR OWN results against the class, then their answer list. */}
+          {insights && user?.role === 'teacher' && (
+            <RoomInsights insights={insights} isTeacher isMobile={isMobile} onExportResponses={exportResponsesCsv} />
+          )}
+          {insights && user?.role !== 'teacher' && (
+            <StudentInsights insights={insights} isMobile={isMobile} />
+          )}
+
+          {/* Fallback question list — only if the insights call failed; both roles otherwise get the
+              collapsible question-wise analysis above (teacher: item analysis, student: own results). */}
+          {insightsFailed && (
+          <div data-tour="question-analysis" style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-lg)',
@@ -381,7 +399,7 @@ function RoomResultsPage() {
                               width: '28px',
                               height: '28px',
                               borderRadius: '50%',
-                              background: 'var(--accent)',
+                              background: 'var(--accent-solid)',
                               color: 'white',
                               display: 'flex',
                               alignItems: 'center',
@@ -562,6 +580,7 @@ function RoomResultsPage() {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>
