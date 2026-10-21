@@ -26,11 +26,8 @@ import {
   Clock,
   XCircle,
   FileSpreadsheet,
-  FileText,
-  ClipboardList
+  ChartColumn
 } from 'lucide-react'
-import ClassMaterialsTab from '../components/ClassMaterialsTab'
-import ClassAssignmentsTab from '../components/ClassAssignmentsTab'
 
 export default function StudentClassDetailPage() {
   const { id: classId } = useParams()
@@ -39,7 +36,7 @@ export default function StudentClassDetailPage() {
   const { socket } = useSocketStore()
   const isMobile = useIsMobile()
 
-  const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'materials' | 'assignments'
+  const [activeTab, setActiveTab] = useState('sessions') // 'sessions' | 'performance'
   const [classData, setClassData] = useState(null)
   const [performance, setPerformance] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -157,10 +154,10 @@ export default function StudentClassDetailPage() {
           isMobile={isMobile}
           icon={School}
           eyebrow={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>CLASS</span>
-              <span>•</span>
-              <CodeChip code={cls.code || ''} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 700, letterSpacing: '0.04em' }}>CLASS SERIES</span>
+              <span style={{ opacity: 0.6 }}>•</span>
+              <CodeChip code={cls.code || ''} variant="header" />
               {activeSession && <Pill tone="#10b981" dot>Session Live</Pill>}
             </div>
           }
@@ -197,71 +194,7 @@ export default function StudentClassDetailPage() {
             </div>
           )}
 
-          {/* Live Session Banner (Real-time update) */}
-          {activeSession && (
-            <div style={{
-              ...cardStyle(isMobile),
-              background: 'linear-gradient(135deg, color-mix(in srgb, #10b981 12%, var(--bg-card)) 0%, color-mix(in srgb, var(--accent) 8%, var(--bg-card)) 100%)',
-              border: '1px solid color-mix(in srgb, #10b981 35%, var(--border-color))',
-              marginBottom: 28
-            }}>
-              <div style={{
-                display: 'flex',
-                flexDirection: isMobile ? 'column' : 'row',
-                alignItems: isMobile ? 'flex-start' : 'center',
-                justifyContent: 'space-between',
-                gap: 16
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <span style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 14,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: '#10b981',
-                    color: '#fff',
-                    flexShrink: 0,
-                    boxShadow: '0 4px 14px rgba(16,185,129,0.35)'
-                  }}>
-                    <CircleDot size={24} className="app-pulse" />
-                  </span>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 17, fontWeight: 750, color: 'var(--text-primary)' }}>
-                        {activeSession.name}
-                      </span>
-                      <Pill tone="#10b981" dot>Live Now</Pill>
-                    </div>
-                    <p style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--text-secondary)' }}>
-                      Your teacher is conducting this session right now. Click below to enter and answer live polls.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => navigate(`/student/session/${activeSession.code}`)}
-                  style={primaryButton(false, {
-                    width: isMobile ? '100%' : 'auto',
-                    padding: '12px 24px',
-                    fontSize: 14,
-                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                    boxShadow: '0 6px 18px rgba(16,185,129,0.35)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8
-                  })}
-                >
-                  <Play size={16} /> Join Live Session
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Tab Navigation: Performance & Sessions | Course Materials | Assignments */}
+          {/* Tab Navigation: Sessions & Roster | Performance */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -273,7 +206,7 @@ export default function StudentClassDetailPage() {
           }}>
             <button
               type="button"
-              onClick={() => setActiveTab('overview')}
+              onClick={() => setActiveTab('sessions')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -281,22 +214,22 @@ export default function StudentClassDetailPage() {
                 padding: '10px 18px',
                 borderRadius: '12px 12px 0 0',
                 border: 'none',
-                borderBottom: activeTab === 'overview' ? '3px solid var(--accent)' : '3px solid transparent',
-                background: activeTab === 'overview' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
-                color: activeTab === 'overview' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontWeight: activeTab === 'overview' ? 750 : 600,
+                borderBottom: activeTab === 'sessions' ? '3px solid var(--accent)' : '3px solid transparent',
+                background: activeTab === 'sessions' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
+                color: activeTab === 'sessions' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: activeTab === 'sessions' ? 750 : 600,
                 fontSize: 14,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 whiteSpace: 'nowrap'
               }}
             >
-              <Library size={16} /> Performance & Sessions
+              <Library size={16} /> Sessions & Roster
             </button>
 
             <button
               type="button"
-              onClick={() => setActiveTab('materials')}
+              onClick={() => setActiveTab('performance')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -304,205 +237,299 @@ export default function StudentClassDetailPage() {
                 padding: '10px 18px',
                 borderRadius: '12px 12px 0 0',
                 border: 'none',
-                borderBottom: activeTab === 'materials' ? '3px solid var(--accent)' : '3px solid transparent',
-                background: activeTab === 'materials' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
-                color: activeTab === 'materials' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontWeight: activeTab === 'materials' ? 750 : 600,
+                borderBottom: activeTab === 'performance' ? '3px solid var(--accent)' : '3px solid transparent',
+                background: activeTab === 'performance' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
+                color: activeTab === 'performance' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: activeTab === 'performance' ? 750 : 600,
                 fontSize: 14,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 whiteSpace: 'nowrap'
               }}
             >
-              <FileText size={16} /> Course Materials
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('assignments')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '10px 18px',
-                borderRadius: '12px 12px 0 0',
-                border: 'none',
-                borderBottom: activeTab === 'assignments' ? '3px solid var(--accent)' : '3px solid transparent',
-                background: activeTab === 'assignments' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
-                color: activeTab === 'assignments' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontWeight: activeTab === 'assignments' ? 750 : 600,
-                fontSize: 14,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <ClipboardList size={16} /> Assignments
+              <ChartColumn size={16} /> Performance
             </button>
           </div>
 
-          {activeTab === 'overview' && (
+          {activeTab === 'sessions' && (
+            <>
+              {/* Live Session Banner (Real-time update) */}
+              {activeSession && (
+                <div style={{
+                  ...cardStyle(isMobile),
+                  background: 'linear-gradient(135deg, color-mix(in srgb, #10b981 12%, var(--bg-card)) 0%, color-mix(in srgb, var(--accent) 8%, var(--bg-card)) 100%)',
+                  border: '1px solid color-mix(in srgb, #10b981 35%, var(--border-color))',
+                  marginBottom: 28
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    alignItems: isMobile ? 'flex-start' : 'center',
+                    justifyContent: 'space-between',
+                    gap: 16
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <span style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 14,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: '#10b981',
+                        color: '#fff',
+                        flexShrink: 0,
+                        boxShadow: '0 4px 14px rgba(16,185,129,0.35)'
+                      }}>
+                        <CircleDot size={24} className="app-pulse" />
+                      </span>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 17, fontWeight: 750, color: 'var(--text-primary)' }}>
+                            {activeSession.name}
+                          </span>
+                          <Pill tone="#10b981" dot>Live Now</Pill>
+                        </div>
+                        <p style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--text-secondary)' }}>
+                          Your teacher is conducting this session right now. Click below to enter and answer live polls.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/student/session/${activeSession.code}`)}
+                      style={primaryButton(false, {
+                        width: isMobile ? '100%' : 'auto',
+                        padding: '12px 24px',
+                        fontSize: 14,
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        boxShadow: '0 6px 18px rgba(16,185,129,0.35)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8
+                      })}
+                    >
+                      <Play size={16} /> Join Live Session
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Class Sessions History */}
+              <SectionLabel actions={<span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{sessions.length} sessions</span>}>
+                Session History
+              </SectionLabel>
+
+              <div style={{ ...cardStyle(isMobile), padding: 0, overflow: 'hidden' }}>
+                {sessions.length === 0 ? (
+                  <div style={{ padding: 32 }}>
+                    <EmptyState
+                      icon={Library}
+                      title="No sessions hosted yet"
+                      description="When your teacher launches a session for this class, it will appear here."
+                    />
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13.5 }}>
+                      <thead>
+                        <tr style={{ background: 'color-mix(in srgb, var(--text-secondary) 5%, var(--bg-card))', borderBottom: '1px solid var(--border-color)' }}>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Session</th>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</th>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Attendance</th>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Score</th>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessions.map((sess) => {
+                          const isLive = sess.isActive && !sess.endedAt
+                          return (
+                            <tr
+                              key={sess.roomId}
+                              style={{
+                                borderBottom: '1px solid var(--border-color)',
+                                background: isLive ? 'color-mix(in srgb, #10b981 4%, var(--bg-card))' : 'transparent',
+                                transition: 'background 0.15s ease'
+                              }}
+                            >
+                              <td style={{ padding: '14px 18px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <span style={{ fontWeight: 650, color: 'var(--text-primary)' }}>{sess.roomName}</span>
+                                  {isLive && <Pill tone="#10b981" dot>Live</Pill>}
+                                </div>
+                              </td>
+
+                              <td style={{ padding: '14px 18px', color: 'var(--text-secondary)' }}>
+                                {sess.date ? new Date(sess.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                              </td>
+
+                              <td style={{ padding: '14px 18px' }}>
+                                {sess.attended ? (
+                                  <Pill tone="#10b981">Attended</Pill>
+                                ) : (
+                                  <Pill tone="var(--text-secondary)">Missed</Pill>
+                                )}
+                              </td>
+
+                              <td style={{ padding: '14px 18px' }}>
+                                {sess.attended ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontWeight: 650, color: 'var(--text-primary)' }}>
+                                      {sess.correctCount} / {sess.pollsAttempted}
+                                    </span>
+                                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                      ({sess.accuracy}%)
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>—</span>
+                                )}
+                              </td>
+
+                              <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                                {isLive ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(`/student/session/${sess.roomCode}`)}
+                                    style={primaryButton(false, {
+                                      padding: '6px 12px',
+                                      fontSize: 12.5,
+                                      background: 'linear-gradient(135deg, #10b981, #059669)'
+                                    })}
+                                  >
+                                    Join
+                                  </button>
+                                ) : sess.attended ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(`/student/room/${sess.roomId}/results`)}
+                                    style={ghostButton({ padding: '6px 12px', fontSize: 12.5 })}
+                                  >
+                                    View Results
+                                  </button>
+                                ) : (
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>Ended</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {activeTab === 'performance' && (
             <>
               {/* My Performance in this Class */}
               <SectionLabel>My Performance</SectionLabel>
 
-          <TileGrid isMobile={isMobile} cols={3} tour="student-class-perf">
-            <StatTile
-              icon={Library}
-              label="Sessions Attended"
-              value={`${performance?.sessionsAttended || 0} / ${performance?.totalClassSessions || sessions.length}`}
-              sub={
-                (performance?.totalClassSessions || sessions.length) > 0
-                  ? `${Math.round(((performance?.sessionsAttended || 0) / Math.max(performance?.totalClassSessions || sessions.length, 1)) * 100)}% attendance`
-                  : 'No sessions hosted'
-              }
-              tint="var(--accent)"
-              isMobile={isMobile}
-            />
-            <StatTile
-              icon={CheckCircle2}
-              label="Polls Attempted"
-              value={performance?.pollsAttempted || 0}
-              sub={`${performance?.correctCount || 0} correct answers`}
-              tint="#10b981"
-              isMobile={isMobile}
-            />
-            <StatTile
-              icon={Award}
-              label="Class Accuracy"
-              value={`${performance?.accuracy || 0}%`}
-              sub="Across all answered questions"
-              tint="#f59e0b"
-              tone={(performance?.accuracy || 0) >= 70 ? '#10b981' : undefined}
-              isMobile={isMobile}
-            />
-          </TileGrid>
-
-          {/* Class Sessions History */}
-          <SectionLabel actions={<span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{sessions.length} sessions</span>}>
-            Session History
-          </SectionLabel>
-
-          <div style={{ ...cardStyle(isMobile), padding: 0, overflow: 'hidden' }}>
-            {sessions.length === 0 ? (
-              <div style={{ padding: 32 }}>
-                <EmptyState
+              <TileGrid isMobile={isMobile} cols={3} tour="student-class-perf">
+                <StatTile
                   icon={Library}
-                  title="No sessions hosted yet"
-                  description="When your teacher launches a session for this class, it will appear here."
+                  label="Sessions Attended"
+                  value={`${performance?.sessionsAttended || 0} / ${performance?.totalClassSessions || sessions.length}`}
+                  sub={
+                    (performance?.totalClassSessions || sessions.length) > 0
+                      ? `${Math.round(((performance?.sessionsAttended || 0) / Math.max(performance?.totalClassSessions || sessions.length, 1)) * 100)}% attendance`
+                      : 'No sessions hosted'
+                  }
+                  tint="var(--accent)"
+                  isMobile={isMobile}
                 />
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13.5 }}>
-                  <thead>
-                    <tr style={{ background: 'color-mix(in srgb, var(--text-secondary) 5%, var(--bg-card))', borderBottom: '1px solid var(--border-color)' }}>
-                      <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Session</th>
-                      <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</th>
-                      <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Attendance</th>
-                      <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Score</th>
-                      <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessions.map((sess) => {
-                      const isLive = sess.isActive && !sess.endedAt
-                      return (
-                        <tr
-                          key={sess.roomId}
-                          style={{
-                            borderBottom: '1px solid var(--border-color)',
-                            background: isLive ? 'color-mix(in srgb, #10b981 4%, var(--bg-card))' : 'transparent',
-                            transition: 'background 0.15s ease'
-                          }}
-                        >
-                          <td style={{ padding: '14px 18px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <span style={{ fontWeight: 650, color: 'var(--text-primary)' }}>{sess.roomName}</span>
-                              <CodeChip code={sess.roomCode} />
-                              {isLive && <Pill tone="#10b981" dot>Live</Pill>}
-                            </div>
-                          </td>
+                <StatTile
+                  icon={CheckCircle2}
+                  label="Polls Attempted"
+                  value={performance?.pollsAttempted || 0}
+                  sub={`${performance?.correctCount || 0} correct answers`}
+                  tint="#10b981"
+                  isMobile={isMobile}
+                />
+                <StatTile
+                  icon={Award}
+                  label="Class Accuracy"
+                  value={`${performance?.accuracy || 0}%`}
+                  sub="Across all answered questions"
+                  tint="#f59e0b"
+                  tone={(performance?.accuracy || 0) >= 70 ? '#10b981' : undefined}
+                  isMobile={isMobile}
+                />
+              </TileGrid>
 
-                          <td style={{ padding: '14px 18px', color: 'var(--text-secondary)' }}>
-                            {sess.date ? new Date(sess.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                          </td>
+              {/* Personal Session Performance Breakdown */}
+              <SectionLabel actions={<span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{sessions.filter(s => s.attended).length} attended</span>}>
+                Session Performance Breakdown
+              </SectionLabel>
 
-                          <td style={{ padding: '14px 18px' }}>
-                            {sess.attended ? (
-                              <Pill tone="#10b981">Attended</Pill>
-                            ) : (
-                              <Pill tone="var(--text-secondary)">Missed</Pill>
-                            )}
-                          </td>
-
-                          <td style={{ padding: '14px 18px' }}>
-                            {sess.attended ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontWeight: 650, color: 'var(--text-primary)' }}>
-                                  {sess.correctCount} / {sess.pollsAttempted}
-                                </span>
-                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                                  ({sess.accuracy}%)
-                                </span>
-                              </div>
-                            ) : (
-                              <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>—</span>
-                            )}
-                          </td>
-
-                          <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                            {isLive ? (
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/student/session/${sess.roomCode}`)}
-                                style={primaryButton(false, {
-                                  padding: '6px 12px',
-                                  fontSize: 12.5,
-                                  background: 'linear-gradient(135deg, #10b981, #059669)'
-                                })}
-                              >
-                                Join
-                              </button>
-                            ) : sess.attended ? (
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/student/room/${sess.roomId}/results`)}
-                                style={ghostButton({ padding: '6px 12px', fontSize: 12.5 })}
-                              >
-                                View Results
-                              </button>
-                            ) : (
-                              <span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>Ended</span>
-                            )}
-                          </td>
+              <div style={{ ...cardStyle(isMobile), padding: 0, overflow: 'hidden' }}>
+                {sessions.length === 0 ? (
+                  <div style={{ padding: 32 }}>
+                    <EmptyState
+                      icon={Award}
+                      title="No performance data yet"
+                      description="Attend class sessions and participate in polls to see your performance metrics here."
+                    />
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13.5 }}>
+                      <thead>
+                        <tr style={{ background: 'color-mix(in srgb, var(--text-secondary) 5%, var(--bg-card))', borderBottom: '1px solid var(--border-color)' }}>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Session</th>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</th>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Score</th>
+                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Accuracy</th>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody>
+                        {sessions.map((sess) => (
+                          <tr
+                            key={sess.roomId}
+                            style={{
+                              borderBottom: '1px solid var(--border-color)',
+                              background: sess.attended ? 'transparent' : 'color-mix(in srgb, var(--text-secondary) 3%, var(--bg-card))'
+                            }}
+                          >
+                            <td style={{ padding: '14px 18px', fontWeight: 650, color: 'var(--text-primary)' }}>
+                              {sess.roomName}
+                            </td>
+                            <td style={{ padding: '14px 18px', color: 'var(--text-secondary)' }}>
+                              {sess.date ? new Date(sess.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                            </td>
+                            <td style={{ padding: '14px 18px' }}>
+                              {sess.attended ? (
+                                <Pill tone="#10b981">Attended</Pill>
+                              ) : (
+                                <Pill tone="var(--text-secondary)">Missed</Pill>
+                              )}
+                            </td>
+                            <td style={{ padding: '14px 18px', color: 'var(--text-primary)', fontWeight: 600 }}>
+                              {sess.attended ? `${sess.correctCount} / ${sess.pollsAttempted}` : '—'}
+                            </td>
+                            <td style={{ padding: '14px 18px' }}>
+                              {sess.attended ? (
+                                <Pill tone={sess.accuracy >= 70 ? '#10b981' : sess.accuracy >= 40 ? '#f59e0b' : 'var(--text-secondary)'}>
+                                  {sess.accuracy}%
+                                </Pill>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          </>
-          )}
-
-          {activeTab === 'materials' && (
-            <ClassMaterialsTab
-              classId={classId}
-              isTeacher={false}
-              sessions={sessions}
-              isMobile={isMobile}
-            />
-          )}
-
-          {activeTab === 'assignments' && (
-            <ClassAssignmentsTab
-              classId={classId}
-              isTeacher={false}
-              user={user}
-              isMobile={isMobile}
-            />
+            </>
           )}
         </div>
       </div>

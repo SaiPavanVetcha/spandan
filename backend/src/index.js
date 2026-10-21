@@ -579,7 +579,17 @@ io.on('connection', (socket) => {
       // Authorize BEFORE subscribing to the room channel: resolve the room and check that this
       // caller is allowed in (teacher must own it; student may join an active room by code).
       const room = await Room.findByCode(roomCode)
-      const decision = canJoinRoom({ role, userId, room })
+      let isClassMember = false
+      if (room?.classId && role === 'student') {
+        const ClassMember = (await import('./models/ClassMember.js')).default
+        const membership = await ClassMember.findOne({
+          classId: room.classId,
+          studentId: userId,
+          status: 'active'
+        })
+        isClassMember = !!membership
+      }
+      const decision = canJoinRoom({ role, userId, room, isClassMember })
       if (!decision.ok) {
         socket.emit('room:error', { error: decision.error })
         return

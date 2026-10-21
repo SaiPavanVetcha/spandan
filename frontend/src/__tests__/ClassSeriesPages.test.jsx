@@ -145,7 +145,18 @@ describe('TeacherClassDetailPage', () => {
       expect(screen.getByText('Alice Smith')).toBeInTheDocument()
     })
 
-    // Check table headers
+    // Enforce Rule 1: message "End the current live session first" appears when session is live
+    expect(screen.getByText(/End the current live session first/)).toBeInTheDocument()
+
+    // Requirement 3: Session list and live banner do NOT expose room codes
+    expect(screen.queryByText('RAFT26')).not.toBeInTheDocument()
+    expect(screen.queryByText('PAX301')).not.toBeInTheDocument()
+
+    // Switch to Performance tab
+    const perfTabButton = screen.getByRole('button', { name: /Performance/i })
+    fireEvent.click(perfTabButton)
+
+    // Check performance table headers
     expect(screen.getByText('Student')).toBeInTheDocument()
     expect(screen.getByText('Email')).toBeInTheDocument()
     expect(screen.getByText('Sessions Attended')).toBeInTheDocument()
@@ -153,8 +164,8 @@ describe('TeacherClassDetailPage', () => {
     expect(screen.getByText('Correct (Count + %)')).toBeInTheDocument()
     expect(screen.getAllByText('Actions').length).toBeGreaterThanOrEqual(1)
 
-    // Enforce Rule 1: message "End the current live session first" appears when session is live
-    expect(screen.getByText(/End the current live session first/)).toBeInTheDocument()
+    // Primary action: Export CSV button in Performance tab
+    expect(screen.getByRole('button', { name: /Export CSV/i })).toBeInTheDocument()
 
     // Enforce Rule 3: Compact list with Show More toggle (only first 7 students rendered initially)
     expect(screen.getByText(/Show more \(2 more\)/)).toBeInTheDocument()

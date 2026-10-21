@@ -14,14 +14,8 @@ import {
   getClassStats
 } from '../services/classService.js'
 import { authenticate, authorize, requireApprovedTeacher } from '../middleware/auth.js'
-import materialRoutes from './materials.js'
-import assignmentRoutes from './assignments.js'
 
 const router = express.Router()
-
-// Materials & Assignments sub-routes
-router.use('/:classId/materials', materialRoutes)
-router.use('/:classId/assignments', assignmentRoutes)
 
 // Create new class (teacher only)
 router.post('/', authenticate, authorize('teacher'), requireApprovedTeacher, async (req, res) => {

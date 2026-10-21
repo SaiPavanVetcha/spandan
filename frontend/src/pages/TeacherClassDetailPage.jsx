@@ -42,12 +42,8 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Award,
-  CircleDot,
-  FileText,
-  ClipboardList
+  CircleDot
 } from 'lucide-react'
-import ClassMaterialsTab from '../components/ClassMaterialsTab'
-import ClassAssignmentsTab from '../components/ClassAssignmentsTab'
 import { Ico, renderIcon } from '../components/icons'
 
 
@@ -64,7 +60,7 @@ export default function TeacherClassDetailPage() {
   const [membersData, setMembersData] = useState({ active: [], pending: [], removed: [], totalClassSessions: 0 })
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'materials' | 'assignments'
+  const [activeTab, setActiveTab] = useState('sessions') // 'sessions' | 'performance'
 
   // Start Session Modal
   const [showSessionModal, setShowSessionModal] = useState(false)
@@ -315,15 +311,15 @@ export default function TeacherClassDetailPage() {
         maxWidth: '100%',
         boxSizing: 'border-box'
       }}>
-        {/* PageHeader with Class Name + Code (Copy) + Export Class CSV */}
+        {/* PageHeader with Class Name + Code (Copy) */}
         <PageHeader
           isMobile={isMobile}
           icon={School}
           eyebrow={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>CLASS SERIES</span>
-              <span>•</span>
-              <CodeChip code={cls.code || ''} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 700, letterSpacing: '0.04em' }}>CLASS SERIES</span>
+              <span style={{ opacity: 0.6 }}>•</span>
+              <CodeChip code={cls.code || ''} variant="header" />
               {hasActiveSession && <Pill tone="#10b981" dot>Session Live</Pill>}
             </div>
           }
@@ -331,14 +327,6 @@ export default function TeacherClassDetailPage() {
           subtitle={`${sessions.length} total sessions · ${activeMembers.length} enrolled students`}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              type="button"
-              onClick={handleExportClassCsv}
-              title="Download whole class roster and performance as CSV"
-              style={ghostButton({ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 })}
-            >
-              <Download size={14} /> Export CSV
-            </button>
             <button
               type="button"
               onClick={() => navigate('/teacher/classes')}
@@ -417,7 +405,7 @@ export default function TeacherClassDetailPage() {
             />
           </TileGrid>
 
-          {/* Tab Navigation: Sessions & Roster | Course Materials | Assignments */}
+          {/* Tab Navigation: Sessions & Roster | Performance */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -429,7 +417,7 @@ export default function TeacherClassDetailPage() {
           }}>
             <button
               type="button"
-              onClick={() => setActiveTab('overview')}
+              onClick={() => setActiveTab('sessions')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -437,10 +425,10 @@ export default function TeacherClassDetailPage() {
                 padding: '10px 18px',
                 borderRadius: '12px 12px 0 0',
                 border: 'none',
-                borderBottom: activeTab === 'overview' ? '3px solid var(--accent)' : '3px solid transparent',
-                background: activeTab === 'overview' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
-                color: activeTab === 'overview' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontWeight: activeTab === 'overview' ? 750 : 600,
+                borderBottom: activeTab === 'sessions' ? '3px solid var(--accent)' : '3px solid transparent',
+                background: activeTab === 'sessions' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
+                color: activeTab === 'sessions' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: activeTab === 'sessions' ? 750 : 600,
                 fontSize: 14,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
@@ -452,7 +440,7 @@ export default function TeacherClassDetailPage() {
 
             <button
               type="button"
-              onClick={() => setActiveTab('materials')}
+              onClick={() => setActiveTab('performance')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -460,44 +448,21 @@ export default function TeacherClassDetailPage() {
                 padding: '10px 18px',
                 borderRadius: '12px 12px 0 0',
                 border: 'none',
-                borderBottom: activeTab === 'materials' ? '3px solid var(--accent)' : '3px solid transparent',
-                background: activeTab === 'materials' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
-                color: activeTab === 'materials' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontWeight: activeTab === 'materials' ? 750 : 600,
+                borderBottom: activeTab === 'performance' ? '3px solid var(--accent)' : '3px solid transparent',
+                background: activeTab === 'performance' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
+                color: activeTab === 'performance' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: activeTab === 'performance' ? 750 : 600,
                 fontSize: 14,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 whiteSpace: 'nowrap'
               }}
             >
-              <FileText size={16} /> Materials
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('assignments')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '10px 18px',
-                borderRadius: '12px 12px 0 0',
-                border: 'none',
-                borderBottom: activeTab === 'assignments' ? '3px solid var(--accent)' : '3px solid transparent',
-                background: activeTab === 'assignments' ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
-                color: activeTab === 'assignments' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontWeight: activeTab === 'assignments' ? 750 : 600,
-                fontSize: 14,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <ClipboardList size={16} /> Assignments
+              <ChartColumn size={16} /> Performance
             </button>
           </div>
 
-          {activeTab === 'overview' && (
+          {activeTab === 'sessions' && (
             <>
               {/* 2. Start New Session Guard & Actions */}
               <SectionLabel>Live Session Control</SectionLabel>
@@ -547,7 +512,6 @@ export default function TeacherClassDetailPage() {
                         {activeSession.name}
                       </span>
                       <Pill tone="#10b981" dot>Live Now</Pill>
-                      <CodeChip code={activeSession.code} />
                     </div>
                     <p style={{ margin: '3px 0 0', fontSize: 13, color: '#059669', fontWeight: 600 }}>
                       End the current live session first.
@@ -728,7 +692,6 @@ export default function TeacherClassDetailPage() {
                           <td style={{ padding: '14px 18px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <span style={{ fontWeight: 650, color: 'var(--text-primary)' }}>{sess.name}</span>
-                              <CodeChip code={sess.code} />
                             </div>
                           </td>
                           <td style={{ padding: '14px 18px' }}>
@@ -896,7 +859,7 @@ export default function TeacherClassDetailPage() {
             </div>
           )}
 
-          {/* Enrolled Students: Compact List / Table (NOT cards!) */}
+          {/* Enrolled Students: Roster Table */}
           <div style={{ ...cardStyle(isMobile), padding: 0, overflow: 'hidden' }}>
             {activeMembers.length === 0 ? (
               <div style={{ padding: 32 }}>
@@ -911,172 +874,309 @@ export default function TeacherClassDetailPage() {
                 </EmptyState>
               </div>
             ) : (
-              <div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13.5 }}>
-                    <thead>
-                      <tr style={{ background: 'color-mix(in srgb, var(--text-secondary) 5%, var(--bg-card))', borderBottom: '1px solid var(--border-color)' }}>
-                        <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Student</th>
-                        {!isMobile && <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email</th>}
-                        <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sessions Attended</th>
-                        <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Polls Attempted</th>
-                        <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Correct (Count + %)</th>
-                        <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Actions</th>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13.5 }}>
+                  <thead>
+                    <tr style={{ background: 'color-mix(in srgb, var(--text-secondary) 5%, var(--bg-card))', borderBottom: '1px solid var(--border-color)' }}>
+                      <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Student</th>
+                      {!isMobile && <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email</th>}
+                      <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+                      <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeMembers.map((student) => (
+                      <tr
+                        key={student._id}
+                        style={{
+                          borderBottom: '1px solid var(--border-color)',
+                          transition: 'background 0.15s ease'
+                        }}
+                      >
+                        <td style={{ padding: '12px 18px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: '50%',
+                              background: 'var(--accent-gradient)',
+                              color: '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 700,
+                              fontSize: 13,
+                              flexShrink: 0
+                            }}>
+                              {student.name?.charAt(0)?.toUpperCase() || 'S'}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 650, color: 'var(--text-primary)' }}>{student.name}</div>
+                              {isMobile && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{student.email}</div>}
+                            </div>
+                          </div>
+                        </td>
+
+                        {!isMobile && (
+                          <td style={{ padding: '12px 18px', color: 'var(--text-secondary)', fontSize: 13 }}>
+                            {student.email}
+                          </td>
+                        )}
+
+                        <td style={{ padding: '12px 18px' }}>
+                          <Pill tone="#10b981">Active</Pill>
+                        </td>
+
+                        <td style={{ padding: '12px 18px', textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleViewPerformance(student)}
+                              title="View detailed performance"
+                              style={ghostButton({
+                                padding: '5px 10px',
+                                fontSize: 12.5,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              })}
+                            >
+                              <Eye size={13} /> View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStudentToRemove(student)}
+                              title="Remove student from class (retaining historical data)"
+                              style={ghostButton({
+                                padding: '5px 10px',
+                                fontSize: 12.5,
+                                color: '#ef4444',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              })}
+                            >
+                              <UserX size={13} /> Remove
+                            </button>
+                          </div>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {visibleStudents.map((student) => {
-                        const totalSess = membersData.totalClassSessions || sessions.length || 0
-                        return (
-                          <tr
-                            key={student._id}
-                            style={{
-                              borderBottom: '1px solid var(--border-color)',
-                              transition: 'background 0.15s ease'
-                            }}
-                          >
-                            <td style={{ padding: '12px 18px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: '50%',
-                                  background: 'var(--accent-gradient)',
-                                  color: '#fff',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontWeight: 700,
-                                  fontSize: 13,
-                                  flexShrink: 0
-                                }}>
-                                  {student.name?.charAt(0)?.toUpperCase() || 'S'}
-                                </div>
-                                <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 650, color: 'var(--text-primary)' }}>{student.name}</div>
-                                  {isMobile && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{student.email}</div>}
-                                </div>
-                              </div>
-                            </td>
-
-                            {!isMobile && (
-                              <td style={{ padding: '12px 18px', color: 'var(--text-secondary)', fontSize: 13 }}>
-                                {student.email}
-                              </td>
-                            )}
-
-                            <td style={{ padding: '12px 18px', color: 'var(--text-primary)', fontWeight: 600 }}>
-                              {student.sessionsAttended} / {totalSess}
-                            </td>
-
-                            <td style={{ padding: '12px 18px', color: 'var(--text-primary)', fontWeight: 600 }}>
-                              {student.pollsAttempted}
-                            </td>
-
-                            <td style={{ padding: '12px 18px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontWeight: 650, color: 'var(--text-primary)' }}>
-                                  {student.correctCount}
-                                </span>
-                                <Pill tone={student.accuracy >= 70 ? '#10b981' : student.accuracy >= 40 ? '#f59e0b' : 'var(--text-secondary)'}>
-                                  {student.accuracy}%
-                                </Pill>
-                              </div>
-                            </td>
-
-                            <td style={{ padding: '12px 18px', textAlign: 'right' }}>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleViewPerformance(student)}
-                                  title="View detailed performance"
-                                  style={ghostButton({
-                                    padding: '5px 10px',
-                                    fontSize: 12.5,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 4
-                                  })}
-                                >
-                                  <Eye size={13} /> View
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setStudentToRemove(student)}
-                                  title="Remove student from class (retaining historical data)"
-                                  style={ghostButton({
-                                    padding: '5px 10px',
-                                    fontSize: 12.5,
-                                    color: '#ef4444',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 4
-                                  })}
-                                >
-                                  <UserX size={13} /> Remove
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Show more / Show less toggle */}
-                {activeMembers.length > INITIAL_STUDENT_COUNT && (
-                  <div style={{
-                    padding: '12px 18px',
-                    borderTop: '1px solid var(--border-color)',
-                    background: 'var(--input-bg)',
-                    textAlign: 'center'
-                  }}>
-                    <button
-                      type="button"
-                      onClick={() => setShowAllStudents(!showAllStudents)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--accent)',
-                        fontWeight: 650,
-                        fontSize: 13.5,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6
-                      }}
-                    >
-                      {showAllStudents ? (
-                        <>Show less <ChevronUp size={16} /></>
-                      ) : (
-                        <>Show more ({activeMembers.length - INITIAL_STUDENT_COUNT} more) <ChevronDown size={16} /></>
-                      )}
-                    </button>
-                  </div>
-                )}
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
           </>
           )}
 
-          {activeTab === 'materials' && (
-            <ClassMaterialsTab
-              classId={classId}
-              isTeacher={true}
-              sessions={sessions}
-              isMobile={isMobile}
-            />
-          )}
+          {activeTab === 'performance' && (
+            <>
+              {/* Performance Tab Header + Export CSV Action */}
+              <div style={{
+                display: 'flex',
+                alignItems: isMobile ? 'flex-start' : 'center',
+                justifyContent: 'space-between',
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: 16,
+                marginBottom: 20
+              }}>
+                <div>
+                  <SectionLabel style={{ margin: 0 }}>Class Performance & Analytics</SectionLabel>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Track student engagement, attendance rate, and response accuracy across all completed sessions.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportClassCsv}
+                  title="Download whole class roster and performance as CSV"
+                  style={primaryButton(false, {
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px 18px',
+                    fontSize: 13.5
+                  })}
+                >
+                  <Download size={15} /> Export CSV
+                </button>
+              </div>
 
-          {activeTab === 'assignments' && (
-            <ClassAssignmentsTab
-              classId={classId}
-              isTeacher={true}
-              user={user}
-              isMobile={isMobile}
-            />
+              {/* Summary Tiles from existing stats */}
+              <TileGrid isMobile={isMobile} cols={3} style={{ marginBottom: 24 }}>
+                <StatTile
+                  icon={Users}
+                  label="Enrolled Students"
+                  value={activeMembers.length}
+                  sub="Active class members"
+                  tint="var(--accent)"
+                  isMobile={isMobile}
+                />
+                <StatTile
+                  icon={Library}
+                  label="Average Attendance"
+                  value={`${stats?.avgAttendance ?? (sessions.length > 0 && activeMembers.length > 0 ? Math.round((activeMembers.reduce((acc, m) => acc + (m.sessionsAttended || 0), 0) / (activeMembers.length * sessions.length)) * 100) : 0)}%`}
+                  sub={`${sessions.length} total sessions hosted`}
+                  tint="#10b981"
+                  isMobile={isMobile}
+                />
+                <StatTile
+                  icon={Award}
+                  label="Class Accuracy"
+                  value={`${stats?.averageAccuracy ?? (activeMembers.reduce((acc, m) => acc + (m.pollsAttempted || 0), 0) > 0 ? Math.round((activeMembers.reduce((acc, m) => acc + (m.correctCount || 0), 0) / activeMembers.reduce((acc, m) => acc + (m.pollsAttempted || 0), 0)) * 100) : 0)}%`}
+                  sub={`${activeMembers.reduce((acc, m) => acc + (m.pollsAttempted || 0), 0)} total polls attempted`}
+                  tint="#8b5cf6"
+                  isMobile={isMobile}
+                />
+              </TileGrid>
+
+              {/* Whole-Class Performance List */}
+              <SectionLabel actions={<span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{activeMembers.length} students</span>}>
+                Student Performance Breakdown
+              </SectionLabel>
+
+              <div style={{ ...cardStyle(isMobile), padding: 0, overflow: 'hidden' }}>
+                {activeMembers.length === 0 ? (
+                  <div style={{ padding: 32 }}>
+                    <EmptyState
+                      icon={Award}
+                      title="No student performance data"
+                      description="Once students join and participate in class sessions, their performance metrics will appear here."
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13.5 }}>
+                        <thead>
+                          <tr style={{ background: 'color-mix(in srgb, var(--text-secondary) 5%, var(--bg-card))', borderBottom: '1px solid var(--border-color)' }}>
+                            <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Student</th>
+                            {!isMobile && <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email</th>}
+                            <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sessions Attended</th>
+                            <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Polls Attempted</th>
+                            <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Correct (Count + %)</th>
+                            <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleStudents.map((student) => {
+                            const totalSess = membersData.totalClassSessions || sessions.length || 0
+                            return (
+                              <tr
+                                key={student._id}
+                                style={{
+                                  borderBottom: '1px solid var(--border-color)',
+                                  transition: 'background 0.15s ease'
+                                }}
+                              >
+                                <td style={{ padding: '12px 18px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{
+                                      width: 32,
+                                      height: 32,
+                                      borderRadius: '50%',
+                                      background: 'var(--accent-gradient)',
+                                      color: '#fff',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontWeight: 700,
+                                      fontSize: 13,
+                                      flexShrink: 0
+                                    }}>
+                                      {student.name?.charAt(0)?.toUpperCase() || 'S'}
+                                    </div>
+                                    <div style={{ minWidth: 0 }}>
+                                      <div style={{ fontWeight: 650, color: 'var(--text-primary)' }}>{student.name}</div>
+                                      {isMobile && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>{student.email}</div>}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {!isMobile && (
+                                  <td style={{ padding: '12px 18px', color: 'var(--text-secondary)', fontSize: 13 }}>
+                                    {student.email}
+                                  </td>
+                                )}
+
+                                <td style={{ padding: '12px 18px', color: 'var(--text-primary)', fontWeight: 600 }}>
+                                  {student.sessionsAttended} / {totalSess}
+                                </td>
+
+                                <td style={{ padding: '12px 18px', color: 'var(--text-primary)', fontWeight: 600 }}>
+                                  {student.pollsAttempted}
+                                </td>
+
+                                <td style={{ padding: '12px 18px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ fontWeight: 650, color: 'var(--text-primary)' }}>
+                                      {student.correctCount}
+                                    </span>
+                                    <Pill tone={student.accuracy >= 70 ? '#10b981' : student.accuracy >= 40 ? '#f59e0b' : 'var(--text-secondary)'}>
+                                      {student.accuracy}%
+                                    </Pill>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '12px 18px', textAlign: 'right' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewPerformance(student)}
+                                    title="View detailed performance"
+                                    style={ghostButton({
+                                      padding: '5px 10px',
+                                      fontSize: 12.5,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4
+                                    })}
+                                  >
+                                    <Eye size={13} /> View
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Show more / Show less toggle */}
+                    {activeMembers.length > INITIAL_STUDENT_COUNT && (
+                      <div style={{
+                        padding: '12px 18px',
+                        borderTop: '1px solid var(--border-color)',
+                        background: 'var(--input-bg)',
+                        textAlign: 'center'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllStudents(!showAllStudents)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--accent)',
+                            fontWeight: 650,
+                            fontSize: 13.5,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6
+                          }}
+                        >
+                          {showAllStudents ? (
+                            <>Show less <ChevronUp size={16} /></>
+                          ) : (
+                            <>Show more ({activeMembers.length - INITIAL_STUDENT_COUNT} more) <ChevronDown size={16} /></>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>

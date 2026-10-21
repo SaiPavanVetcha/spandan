@@ -158,39 +158,8 @@ export const classApi = {
   getStats: (id) => api.get(`/classes/${id}/stats`),
   getMembers: (id) => api.get(`/classes/${id}/members`),
   getMemberPerformance: (id, studentId) => api.get(`/classes/${id}/members/${studentId}/performance`),
-  updateMember: (id, studentId, action) => api.patch(`/classes/${id}/members/${studentId}`, { action })
-}
-
-export const materialApi = {
-  getAll: (classId, sessionId = null) =>
-    api.get(`/classes/${classId}/materials${sessionId ? `?sessionId=${sessionId}` : ''}`),
-  upload: (classId, formData) =>
-    api.postFormData(`/classes/${classId}/materials`, formData),
-  download: (classId, materialId, filename) =>
-    api.downloadBlob(`/classes/${classId}/materials/${materialId}/download`, filename),
-  delete: (classId, materialId) =>
-    api.delete(`/classes/${classId}/materials/${materialId}`)
-}
-
-export const assignmentApi = {
-  getAll: (classId) =>
-    api.get(`/classes/${classId}/assignments`),
-  getById: (classId, assignmentId) =>
-    api.get(`/classes/${classId}/assignments/${assignmentId}`),
-  create: (classId, formData) =>
-    api.postFormData(`/classes/${classId}/assignments`, formData),
-  submit: (classId, assignmentId, formData) =>
-    api.postFormData(`/classes/${classId}/assignments/${assignmentId}/submit`, formData),
-  getSubmissions: (classId, assignmentId) =>
-    api.get(`/classes/${classId}/assignments/${assignmentId}/submissions`),
-  downloadAssignment: (classId, assignmentId, filename) =>
-    api.downloadBlob(`/classes/${classId}/assignments/${assignmentId}/download-assignment`, filename),
-  downloadSubmission: (classId, assignmentId, studentId, filename) =>
-    api.downloadBlob(`/classes/${classId}/assignments/${assignmentId}/submissions/${studentId}/download`, filename),
-  bulkDownload: (classId, assignmentId, filename) =>
-    api.downloadBlob(`/classes/${classId}/assignments/${assignmentId}/submissions/bulk-download`, filename),
-  delete: (classId, assignmentId) =>
-    api.delete(`/classes/${classId}/assignments/${assignmentId}`)
+  updateMember: (id, studentId, action) => api.patch(`/classes/${id}/members/${studentId}`, { action }),
+  exportCsv: (id, filename) => api.downloadBlob(`/classes/${id}/export`, filename)
 }
 
 export default api

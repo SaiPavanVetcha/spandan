@@ -96,6 +96,19 @@ router.get('/join/:code', authenticate, authorize('student'), async (req, res) =
     if (room.endedAt) {
       return res.status(400).json({ error: 'This room has ended and can no longer be joined' })
     }
+
+    // When linked to a class, enforce that the student is an active class member
+    if (room.classId) {
+      const ClassMember = (await import('../models/ClassMember.js')).default
+      const membership = await ClassMember.findOne({
+        classId: room.classId,
+        studentId: req.user._id,
+        status: 'active'
+      })
+      if (!membership) {
+        return res.status(403).json({ error: 'You must be enrolled in this class to join the session' })
+      }
+    }
     
     // Ensure student is added to RoomMember (idempotent - safe to call multiple times)
     await RoomMember.findOneAndUpdate(
