@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useSocketStore from '../stores/socketStore'
 import useIsMobile from '../hooks/useIsMobile'
 import Sidebar from '../components/Sidebar'
 import { classApi } from '../lib/api'
+import StudentPerformancePage from './StudentPerformancePage'
 import {
   PageHeader,
   pageWash,
@@ -32,11 +33,14 @@ import {
 export default function StudentClassDetailPage() {
   const { id: classId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, token } = useAuthStore()
   const { socket } = useSocketStore()
   const isMobile = useIsMobile()
 
-  const [activeTab, setActiveTab] = useState('sessions') // 'sessions' | 'performance'
+  const [activeTab, setActiveTab] = useState(
+    location.state?.activeTab === 'performance' ? 'performance' : 'sessions'
+  ) // 'sessions' | 'performance'
   const [classData, setClassData] = useState(null)
   const [performance, setPerformance] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -426,110 +430,7 @@ export default function StudentClassDetailPage() {
           )}
 
           {activeTab === 'performance' && (
-            <>
-              {/* My Performance in this Class */}
-              <SectionLabel>My Performance</SectionLabel>
-
-              <TileGrid isMobile={isMobile} cols={3} tour="student-class-perf">
-                <StatTile
-                  icon={Library}
-                  label="Sessions Attended"
-                  value={`${performance?.sessionsAttended || 0} / ${performance?.totalClassSessions || sessions.length}`}
-                  sub={
-                    (performance?.totalClassSessions || sessions.length) > 0
-                      ? `${Math.round(((performance?.sessionsAttended || 0) / Math.max(performance?.totalClassSessions || sessions.length, 1)) * 100)}% attendance`
-                      : 'No sessions hosted'
-                  }
-                  tint="var(--accent)"
-                  isMobile={isMobile}
-                />
-                <StatTile
-                  icon={CheckCircle2}
-                  label="Polls Attempted"
-                  value={performance?.pollsAttempted || 0}
-                  sub={`${performance?.correctCount || 0} correct answers`}
-                  tint="#10b981"
-                  isMobile={isMobile}
-                />
-                <StatTile
-                  icon={Award}
-                  label="Class Accuracy"
-                  value={`${performance?.accuracy || 0}%`}
-                  sub="Across all answered questions"
-                  tint="#f59e0b"
-                  tone={(performance?.accuracy || 0) >= 70 ? '#10b981' : undefined}
-                  isMobile={isMobile}
-                />
-              </TileGrid>
-
-              {/* Personal Session Performance Breakdown */}
-              <SectionLabel actions={<span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{sessions.filter(s => s.attended).length} attended</span>}>
-                Session Performance Breakdown
-              </SectionLabel>
-
-              <div style={{ ...cardStyle(isMobile), padding: 0, overflow: 'hidden' }}>
-                {sessions.length === 0 ? (
-                  <div style={{ padding: 32 }}>
-                    <EmptyState
-                      icon={Award}
-                      title="No performance data yet"
-                      description="Attend class sessions and participate in polls to see your performance metrics here."
-                    />
-                  </div>
-                ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13.5 }}>
-                      <thead>
-                        <tr style={{ background: 'color-mix(in srgb, var(--text-secondary) 5%, var(--bg-card))', borderBottom: '1px solid var(--border-color)' }}>
-                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Session</th>
-                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</th>
-                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
-                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Score</th>
-                          <th style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Accuracy</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sessions.map((sess) => (
-                          <tr
-                            key={sess.roomId}
-                            style={{
-                              borderBottom: '1px solid var(--border-color)',
-                              background: sess.attended ? 'transparent' : 'color-mix(in srgb, var(--text-secondary) 3%, var(--bg-card))'
-                            }}
-                          >
-                            <td style={{ padding: '14px 18px', fontWeight: 650, color: 'var(--text-primary)' }}>
-                              {sess.roomName}
-                            </td>
-                            <td style={{ padding: '14px 18px', color: 'var(--text-secondary)' }}>
-                              {sess.date ? new Date(sess.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                            </td>
-                            <td style={{ padding: '14px 18px' }}>
-                              {sess.attended ? (
-                                <Pill tone="#10b981">Attended</Pill>
-                              ) : (
-                                <Pill tone="var(--text-secondary)">Missed</Pill>
-                              )}
-                            </td>
-                            <td style={{ padding: '14px 18px', color: 'var(--text-primary)', fontWeight: 600 }}>
-                              {sess.attended ? `${sess.correctCount} / ${sess.pollsAttempted}` : '—'}
-                            </td>
-                            <td style={{ padding: '14px 18px' }}>
-                              {sess.attended ? (
-                                <Pill tone={sess.accuracy >= 70 ? '#10b981' : sess.accuracy >= 40 ? '#f59e0b' : 'var(--text-secondary)'}>
-                                  {sess.accuracy}%
-                                </Pill>
-                              ) : (
-                                <span style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>—</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </>
+            <StudentPerformancePage embedded classId={classId} />
           )}
         </div>
       </div>

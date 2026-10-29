@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useRoomStore from '../stores/roomStore'
 import Sidebar from '../components/Sidebar'
@@ -167,7 +167,38 @@ function RoomResultsPage() {
       const res = await fetch(`${API_URL}/responses/room/${roomId}/export`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (!res.ok) throw new Error('Export failed')
       downloadText(safeFilename(`${room?.name || 'room'}_${room?.code || ''}_responses`) + '.csv', await res.text(), 'text/csv')
-    } catch (e) { window.alert('Could not download the responses CSV. Please try again.') }
+    } catch (e) {
+      window.alert('Could not download the responses CSV. Please try again.')
+    }
+  }
+
+  // Return to the exact performance dashboard that opened these results.
+  const location = useLocation()
+  const handleBack = () => {
+    if (location.state?.from === 'performance') {
+      const returnTo = location.state?.returnTo
+      if (returnTo) {
+        navigate(returnTo, { state: { activeTab: 'performance' } })
+        return
+      }
+
+      const classId = location.state?.classId || room?.classId?._id || room?.classId
+      if (classId && classId !== 'all') {
+        navigate(`/student/classes/${classId}`, { state: { activeTab: 'performance' } })
+      } else {
+        // If the class ID is unavailable, return to the previous page instead of opening Classes.
+        navigate(-1)
+      }
+      return
+    }
+
+    const classId = room?.classId?._id || room?.classId
+
+    if (classId) {
+      navigate(`/${user?.role === 'teacher' ? 'teacher' : 'student'}/classes/${classId}`)
+    } else {
+      navigate(`/${user?.role === 'teacher' ? 'teacher' : 'student'}/room-history`)
+    }
   }
 
   if (isLoading) {
@@ -243,15 +274,10 @@ function RoomResultsPage() {
           boxSizing: 'border-box'
         }}>
           {/* Back Button */}
+
+      
           <button
-            onClick={() => {
-              const classId = room?.classId?._id || room?.classId
-              if (classId) {
-                navigate(`/${user?.role === 'teacher' ? 'teacher' : 'student'}/classes/${classId}`)
-              } else {
-                navigate(`/${user?.role === 'teacher' ? 'teacher' : 'student'}/room-history`)
-              }
-            }}
+            onClick={handleBack}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -268,7 +294,7 @@ function RoomResultsPage() {
               marginBottom: '24px'
             }}
           >
-            <Ico as={ArrowLeft} /> {room?.classId ? 'Back to Class' : 'Back'}
+            <Ico as={ArrowLeft} /> {location.state?.from === 'performance' ? 'Back to Performance' : room?.classId ? 'Back to Class' : 'Back'}
           </button>
 
           {/* Fallback overview stats (insights unavailable) */}

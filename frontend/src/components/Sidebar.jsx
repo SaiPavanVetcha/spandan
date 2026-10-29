@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useLayoutEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import SpandanIcon from './SpandanIcon'
-import { LayoutDashboard, Plus, Settings, History as HistoryIcon, Link as LinkIcon, ShieldCheck, Menu, X, School } from 'lucide-react'
+import { LayoutDashboard, Plus, Settings, History as HistoryIcon, Link as LinkIcon, ShieldCheck, Menu, X, School, TrendingUp } from 'lucide-react'
 import { renderIcon } from './icons'
+
 
 const menuItems = {
   teacher: [
@@ -16,9 +17,11 @@ const menuItems = {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/student' },
     { id: 'classes', label: 'Classes', icon: School, path: '/student/classes' },
     { id: 'join-room', label: 'Join Room', icon: LinkIcon, path: '/student/join-room' },
+   // { id: 'performance', label: 'Our Growth', icon: TrendingUp, path: '/student/performance' },
     { id: 'room-history', label: 'Room History', icon: HistoryIcon, path: '/student/room-history' },
   ]
 }
+
 
 const MOBILE_QUERY = '(max-width: 768px)'
 const EXPANDED_W = 240
