@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useSocketStore from '../stores/socketStore'
 import useRoomStore from '../stores/roomStore'
@@ -10,6 +10,7 @@ import ErrorBoundary from '../components/ErrorBoundary'
 import SoundToggle from '../components/SoundToggle'
 import YouTubeVideo, { extractYouTubeId } from '../components/YouTubeVideo'
 import useIsMobile from '../hooks/useIsMobile'
+import { classApi } from '../lib/api'
 import { API_URL } from '../config.js'
 import { installUnlockOnInteraction, playStudentQuestion, unlockAudio } from '../lib/sounds'
 import { Bell, Check, CircleCheck, Clapperboard, ClipboardList, Hourglass, Lightbulb, Mic, TriangleAlert, Trophy, X } from 'lucide-react'
@@ -55,8 +56,11 @@ function StudentRoomPage() {
   const { socket, isConnected, joinRoom, leaveRoom } = useSocketStore()
   const { joinRoomByCode, setAuthToken } = useRoomStore()
   const isMobile = useIsMobile()
+  const location = useLocation()
 
   const [room, setRoom] = useState(null)
+  const [classCode, setClassCode] = useState(location.state?.classCode || '')
+  const [className, setClassName] = useState(location.state?.className || '')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [currentQuestion, setCurrentQuestion] = useState(null)
@@ -298,6 +302,18 @@ function StudentRoomPage() {
     try {
       const roomData = await joinRoomByCode(roomCode)
       setRoom(roomData)
+      // Extract class code/name from populated classId
+      if (roomData?.classId) {
+        if (typeof roomData.classId === 'object') {
+          if (roomData.classId.code && !classCode) setClassCode(roomData.classId.code)
+          if (roomData.classId.name && !className) setClassName(roomData.classId.name)
+        } else if (typeof roomData.classId === 'string') {
+          classApi.getById(roomData.classId).then(res => {
+            if (res?.class?.code) setClassCode(res.class.code)
+            if (res?.class?.name) setClassName(res.class.name)
+          }).catch(() => {})
+        }
+      }
 
       // Late-join active question recovery: if the room already has a current/active question,
       // recover it and set it as currentQuestion with timer so the student can still answer.
@@ -539,7 +555,7 @@ function StudentRoomPage() {
       <Sidebar user={user} />
       
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', marginLeft: 'var(--sidebar-width, 240px)', minWidth: 0, maxWidth: 'calc(100vw - var(--sidebar-width, 240px))', overflowX: 'hidden' }}>
-        <PageHeader isMobile={isMobile} icon={room.settings?.mode === 'video' ? Clapperboard : Mic} eyebrow="Live session" title={room.name} subtitle={<>Code <strong style={{ letterSpacing: '0.1em' }}>{room.code}</strong></>} />
+        <PageHeader isMobile={isMobile} icon={room.settings?.mode === 'video' ? Clapperboard : Mic} eyebrow="Live session" title={room.name} subtitle={room?.classId ? (className ? <>Class <strong>{className}</strong>{classCode ? <> · Code <strong style={{ letterSpacing: '0.1em' }}>{classCode}</strong></> : null}</> : (classCode ? <>Class code <strong style={{ letterSpacing: '0.1em' }}>{classCode}</strong></> : <>Class session</>)) : (<>Code <strong style={{ letterSpacing: '0.1em' }}>{room.code}</strong></>)} />
 
         {/* Content */}
         <div style={{ flex: 1, padding: isMobile ? '16px' : '32px', width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>

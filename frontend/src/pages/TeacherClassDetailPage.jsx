@@ -242,7 +242,8 @@ export default function TeacherClassDetailPage() {
       })
       if (!res.ok) throw new Error('Failed to export session data')
       const text = await res.text()
-      downloadText(`Spandan_Session_${safeFilename(sessionName || 'session')}_${sessionCode || ''}.csv`, text, 'text/csv')
+      const exportCode = sessionCode || classData?.class?.code || ''
+      downloadText(`Spandan_Session_${safeFilename(sessionName || 'session')}${exportCode ? `_${exportCode}` : ''}.csv`, text, 'text/csv')
     } catch (err) {
       setError(err.message || 'Export failed')
     }
@@ -736,7 +737,7 @@ export default function TeacherClassDetailPage() {
                                   <button
                                     type="button"
                                     title="Download Session CSV"
-                                    onClick={() => handleExportSessionCsv(sess._id, sess.name, sess.code)}
+                                    onClick={() => handleExportSessionCsv(sess._id, sess.name, cls.code)}
                                     style={ghostButton({
                                       padding: '6px 10px',
                                       fontSize: 12.5,

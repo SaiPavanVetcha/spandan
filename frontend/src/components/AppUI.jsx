@@ -128,6 +128,7 @@ export function ChoiceCard({ icon, title, description, active, onClick, tint = '
 
 // Room / class code chip with a copy button.
 export function CodeChip({ code, variant = 'default' }) {
+  if (!code) return null
   const [copied, setCopied] = useState(false)
   const copy = (e) => {
     e.stopPropagation()

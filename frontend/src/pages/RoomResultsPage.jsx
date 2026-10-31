@@ -166,7 +166,9 @@ function RoomResultsPage() {
     try {
       const res = await fetch(`${API_URL}/responses/room/${roomId}/export`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (!res.ok) throw new Error('Export failed')
-      downloadText(safeFilename(`${room?.name || 'room'}_${room?.code || ''}_responses`) + '.csv', await res.text(), 'text/csv')
+      const isClassRoom = Boolean(room?.classId)
+      const exportCode = isClassRoom ? (typeof room.classId === 'object' ? room.classId?.code : null) : room?.code
+      downloadText(safeFilename(`${room?.name || 'room'}${exportCode ? '_' + exportCode : ''}_responses`) + '.csv', await res.text(), 'text/csv')
     } catch (e) {
       window.alert('Could not download the responses CSV. Please try again.')
     }
@@ -263,7 +265,14 @@ function RoomResultsPage() {
         boxSizing: 'border-box'
       }}>
         <PageHeader isMobile={isMobile} icon={ChartColumn} eyebrow="Session results" title={room?.name || 'Room'}
-          subtitle={<>Code <strong style={{ letterSpacing: '0.1em' }}>{room?.code}</strong> · Completed{room?.endedAt ? ` · ${new Date(room.endedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</>} />
+          subtitle={(() => {
+            const isClass = Boolean(room?.classId)
+            const clsCode = isClass ? (typeof room.classId === 'object' ? room.classId?.code : location.state?.classCode) : null
+            const codeLabel = isClass
+              ? (clsCode ? <>Class <strong style={{ letterSpacing: '0.1em' }}>{clsCode}</strong> · </> : null)
+              : <>Code <strong style={{ letterSpacing: '0.1em' }}>{room?.code}</strong> · </>
+            return <>{codeLabel}Completed{room?.endedAt ? ` · ${new Date(room.endedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</>
+          })()} />
 
         {/* Content (faint accent wash behind the results) */}
         <div style={{

@@ -45,7 +45,9 @@ export default function RoomInsights({ insights, isTeacher, isMobile, onExportRe
   const sessionEnd = Math.max(totals.durationMin || 0, ...timeline.map(t => t.minute || 0), ...joinCurve.map(j => j.minute)) || 1
 
   const exportNow = () => {
-    const base = safeFilename(`${room.name}_${room.code}_questions${dlKey ? '' : '_student_copy'}`)
+    const isClass = Boolean(room?.classId)
+    const code = isClass ? (typeof room.classId === 'object' ? room.classId?.code : '') : (room.code || '')
+    const base = safeFilename(`${room.name}${code ? `_${code}` : ''}_questions${dlKey ? '' : '_student_copy'}`)
     if (dlFormat === 'csv') downloadText(base + '.csv', questionsToCsv(insights, { answerKey: dlKey }), 'text/csv')
     else if (!openPrintWindow(questionsToPrintHtml(insights, { answerKey: dlKey }))) window.alert('Your browser blocked the print window. Allow pop-ups for this site and try again.')
     setDl(false)

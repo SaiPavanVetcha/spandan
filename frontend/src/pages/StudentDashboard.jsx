@@ -5,6 +5,7 @@ import useAuthStore from '../stores/authStore'
 import useSocketStore from '../stores/socketStore'
 import useRoomStore from '../stores/roomStore'
 import Sidebar from '../components/Sidebar'
+import { classApi } from '../lib/api'
 import { API_URL } from '../config.js'
 import useIsMobile from '../hooks/useIsMobile'
 import useNow from '../hooks/useNow'
@@ -62,6 +63,7 @@ function StudentDashboard() {
     pollsMissed: 0,
     average: 0,
   })
+  const [classes, setClasses] = useState([])
 
   useEffect(() => {
     if (!token) return
@@ -69,6 +71,7 @@ function StudentDashboard() {
     setAuthToken(token)
     fetchStudentStats()
     fetchActiveRooms()
+    classApi.getAll().then(d => setClasses(d.classes || [])).catch(() => {})
   }, [token])
 
   const fetchStudentStats = async () => {
@@ -454,7 +457,11 @@ function StudentDashboard() {
                 marginBottom: isMobile ? '24px' : '32px',
               }}
             >
-              {activeRooms.map((room) => (
+              {activeRooms.map((room) => {
+                const isClass = Boolean(room.classId)
+                const classObj = isClass ? classes?.find(c => String(c._id) === String(room.classId?._id || room.classId)) : null
+                const displayCode = isClass ? (classObj?.code || (typeof room.classId === 'object' ? room.classId?.code : null)) : room.code
+                return (
                 <RoomCard
                   key={room._id}
                   icon={
@@ -466,7 +473,7 @@ function StudentDashboard() {
                       : 'var(--accent)'
                   }
                   title={room.name}
-                  code={room.code}
+                  code={displayCode}
                   status={
                     <span
                       style={{
@@ -490,7 +497,7 @@ function StudentDashboard() {
                   actionLabel="Rejoin room →"
                   onAction={() => navigate(`/student/session/${room.code}`)}
                 />
-              ))}
+              )})}
             </div>
           ) : (
             <EmptyState

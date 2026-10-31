@@ -302,7 +302,7 @@ export default function StudentClassDetailPage() {
 
                     <button
                       type="button"
-                      onClick={() => navigate(`/student/session/${activeSession.code}`)}
+                      onClick={() => navigate(`/student/session/${activeSession.code}`, { state: { classId, classCode: cls.code, className: cls.name } })}
                       style={primaryButton(false, {
                         width: isMobile ? '100%' : 'auto',
                         padding: '12px 24px',
@@ -397,7 +397,7 @@ export default function StudentClassDetailPage() {
                                 {isLive ? (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(`/student/session/${sess.roomCode}`)}
+                                    onClick={() => navigate(`/student/session/${sess.roomCode}`, { state: { classId, classCode: cls.code, className: cls.name } })}
                                     style={primaryButton(false, {
                                       padding: '6px 12px',
                                       fontSize: 12.5,

@@ -361,20 +361,25 @@ function DashboardPage() {
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>Loading rooms…</div>
           ) : activeRooms.length > 0 ? (
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(270px, 1fr))', gap: '16px' }}>
-              {activeRooms.map((room) => (
-                <RoomCard
-                  key={room._id}
-                  icon={room.settings?.mode === 'video' ? Clapperboard : Mic}
-                  tint={room.settings?.mode === 'video' ? '#ec4899' : 'var(--accent)'}
-                  title={room.name}
-                  code={room.code}
-                  status={<span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}><Pill tone="#10b981" dot>Active</Pill>{room.settings?.mode === 'video' && <Pill tone="#ec4899">Video</Pill>}</span>}
-                  meta={[`${room.questionCount || 0} question${room.questionCount === 1 ? '' : 's'}`]}
-                  actionLabel="Manage →"
-                  onOpen={() => navigate(`/teacher/room/${room._id}`)}
-                  onAction={() => navigate(`/teacher/room/${room._id}`)}
-                />
-              ))}
+              {activeRooms.map((room) => {
+                const isClass = Boolean(room.classId)
+                const classObj = isClass ? classes?.find(c => String(c._id) === String(room.classId?._id || room.classId)) : null
+                const displayCode = isClass ? (classObj?.code || (typeof room.classId === 'object' ? room.classId?.code : null)) : room.code
+                return (
+                  <RoomCard
+                    key={room._id}
+                    icon={room.settings?.mode === 'video' ? Clapperboard : Mic}
+                    tint={room.settings?.mode === 'video' ? '#ec4899' : 'var(--accent)'}
+                    title={room.name}
+                    code={displayCode}
+                    status={<span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}><Pill tone="#10b981" dot>Active</Pill>{room.settings?.mode === 'video' && <Pill tone="#ec4899">Video</Pill>}</span>}
+                    meta={[`${room.questionCount || 0} question${room.questionCount === 1 ? '' : 's'}`]}
+                    actionLabel="Manage →"
+                    onOpen={() => navigate(`/teacher/room/${room._id}`)}
+                    onAction={() => navigate(`/teacher/room/${room._id}`)}
+                  />
+                )
+              })}
             </div>
           ) : (
             <EmptyState icon={Inbox} title="No active rooms" description="Create your first room above. It will appear here while it is open." />

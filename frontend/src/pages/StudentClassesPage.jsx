@@ -345,7 +345,7 @@ export default function StudentClassesPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            navigate(`/student/session/${liveSession.code}`)
+                            navigate(`/student/session/${liveSession.code}`, { state: { classId: cls._id, classCode: cls.code, className: cls.name } })
                           }}
                           style={primaryButton(false, {
                             flex: 1,

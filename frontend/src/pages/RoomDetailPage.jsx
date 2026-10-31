@@ -21,6 +21,7 @@ import { installUnlockOnInteraction } from '../lib/sounds'
 import useGeneratedBatchCues from '../hooks/useGeneratedBatchCues'
 import { transcribeAudio, getTranscriptionStatus, convertWebMToWav } from '../services/serverTranscriptionService'
 import { requestQuestionGeneration, fetchAllRoomQuestions } from '../services/questionService'
+import { classApi } from '../lib/api'
 import { API_URL } from '../config.js'
 import { ArrowLeft, Check, Clapperboard, Copy, FileText, Hourglass, LoaderCircle, Mic as MicIcon, PenLine, RefreshCw, Settings, Timer, Trophy, Users, X } from 'lucide-react'
 import { Ico } from '../components/icons'
@@ -42,6 +43,29 @@ function RoomDetailPage() {
   const [isRoomJoined, setIsRoomJoined] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [classCode, setClassCode] = useState(room?.classId?.code || '')
+
+  useEffect(() => {
+    if (room?.classId) {
+      if (typeof room.classId === 'object' && room.classId?.code) {
+        setClassCode(room.classId.code)
+      } else {
+        const classIdStr = typeof room.classId === 'string' ? room.classId : room.classId?._id
+        if (classIdStr) {
+          classApi.getById(classIdStr)
+            .then(res => {
+              if (res?.class?.code) setClassCode(res.class.code)
+            })
+            .catch(err => console.error('Failed to load class code:', err))
+        }
+      }
+    } else {
+      setClassCode('')
+    }
+  }, [room?.classId])
+
+  const isClassSession = Boolean(room?.classId)
+  const displayCode = isClassSession ? (classCode || '') : (room?.code || '')
   const [showSettings, setShowSettings] = useState(false)
   const settingsRef = useRef(null)
   const transcriptRef = useRef(null)
@@ -543,14 +567,16 @@ function RoomDetailPage() {
         endedAt: new Date()
       })
       setRoom(updated)
-      navigate(`/teacher/room/${room._id}/results`)
+      navigate(`/teacher/room/${room._id}/results`, { state: { classId: room?.classId?._id || room?.classId, classCode } })
     } catch (err) {
       setError(err.message)
     }
   }
 
   const copyRoomCode = () => {
-    navigator.clipboard.writeText(room.code)
+    const codeToCopy = isClassSession ? classCode : room?.code
+    if (!codeToCopy) return
+    navigator.clipboard.writeText(codeToCopy)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -1304,17 +1330,22 @@ function RoomDetailPage() {
               border: '2px solid var(--border-color)',
               borderRadius: '10px'
             }}>
+              {isClassSession && (
+                <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Class Code
+                </span>
+              )}
               <span style={{ fontSize: '28px', fontWeight: '700', color: codeColor, letterSpacing: '4px' }}>
-                {room.code}
+                {displayCode}
               </span>
-              <button onClick={copyRoomCode} disabled={isEnded} style={{
+              <button onClick={copyRoomCode} disabled={isEnded || (isClassSession && !classCode)} title={isClassSession ? 'Copy class code' : 'Copy room code'} style={{
                 padding: '4px 12px',
-                background: isEnded ? '#9ca3af' : (copied ? '#10b981' : 'var(--accent-solid)'),
+                background: (isEnded || (isClassSession && !classCode)) ? '#9ca3af' : (copied ? '#10b981' : 'var(--accent-solid)'),
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
                 fontSize: '12px',
-                cursor: isEnded ? 'not-allowed' : 'pointer'
+                cursor: (isEnded || (isClassSession && !classCode)) ? 'not-allowed' : 'pointer'
               }}>
                 {copied ? <><Ico as={Check} /> Copied</> : <><Ico as={Copy} /> Copy</>}
               </button>
