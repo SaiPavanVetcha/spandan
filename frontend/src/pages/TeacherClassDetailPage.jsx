@@ -42,7 +42,9 @@ import {
   ChevronUp,
   FileSpreadsheet,
   Award,
-  CircleDot
+  CircleDot,
+  Archive,
+  ArchiveRestore
 } from 'lucide-react'
 import { Ico, renderIcon } from '../components/icons'
 
@@ -82,6 +84,10 @@ export default function TeacherClassDetailPage() {
   const [studentToRemove, setStudentToRemove] = useState(null)
   const [isRemoving, setIsRemoving] = useState(false)
   const [allClasses, setAllClasses] = useState([])
+
+  // Archive class modal & loading
+  const [showArchiveModal, setShowArchiveModal] = useState(false)
+  const [isArchiving, setIsArchiving] = useState(false)
 
   const fetchClassDetails = async () => {
     try {
@@ -147,6 +153,10 @@ export default function TeacherClassDetailPage() {
   const handleStartSession = async (e) => {
     e?.preventDefault()
     if (!sessionName.trim() || isStartingSession) return
+    if (cls.isActive === false) {
+      setError('This class is archived. Restore it to start new sessions.')
+      return
+    }
     if (hasAnyLiveClassSession) {
       setError('End the current live session first.')
       return
@@ -176,6 +186,33 @@ export default function TeacherClassDetailPage() {
       setError(err.message || 'Failed to start session')
     } finally {
       setIsStartingSession(false)
+    }
+  }
+
+  const handleArchiveClass = async () => {
+    setIsArchiving(true)
+    setError(null)
+    try {
+      await classApi.archive(classId)
+      setShowArchiveModal(false)
+      await fetchClassDetails()
+    } catch (err) {
+      setError(err.message || 'Failed to archive class')
+    } finally {
+      setIsArchiving(false)
+    }
+  }
+
+  const handleRestoreClass = async () => {
+    setIsArchiving(true)
+    setError(null)
+    try {
+      await classApi.restore(classId)
+      await fetchClassDetails()
+    } catch (err) {
+      setError(err.message || 'Failed to restore class')
+    } finally {
+      setIsArchiving(false)
     }
   }
 
@@ -276,6 +313,7 @@ export default function TeacherClassDetailPage() {
   }
 
   const cls = classData?.class || {}
+  const isArchived = cls.isActive === false
   const activeSession = classData?.activeSession || null
   const hasActiveSession = !!activeSession
   const teacherActiveSession = classData?.teacherActiveSession || null
@@ -321,7 +359,11 @@ export default function TeacherClassDetailPage() {
               <span style={{ fontWeight: 700, letterSpacing: '0.04em' }}>CLASS SERIES</span>
               <span style={{ opacity: 0.6 }}>•</span>
               <CodeChip code={cls.code || ''} variant="header" />
-              {hasActiveSession && <Pill tone="#10b981" dot>Session Live</Pill>}
+              {isArchived ? (
+                <Pill tone="#f59e0b">Archived</Pill>
+              ) : (
+                hasActiveSession && <Pill tone="#10b981" dot>Session Live</Pill>
+              )}
             </div>
           }
           title={cls.name || 'Class'}
@@ -335,6 +377,33 @@ export default function TeacherClassDetailPage() {
             >
               <ArrowLeft size={14} /> Classes
             </button>
+            {isArchived ? (
+              <button
+                type="button"
+                onClick={handleRestoreClass}
+                disabled={isArchiving}
+                style={primaryButton(isArchiving, { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 })}
+              >
+                <ArchiveRestore size={14} /> {isArchiving ? 'Restoring...' : 'Restore class'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowArchiveModal(true)}
+                disabled={hasActiveSession || isArchiving}
+                title={hasActiveSession ? 'End active session before archiving' : 'Archive this class series'}
+                style={ghostButton({
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 13,
+                  color: hasActiveSession ? 'var(--text-secondary)' : '#f59e0b',
+                  borderColor: hasActiveSession ? 'var(--border-color)' : 'color-mix(in srgb, #f59e0b 35%, transparent)'
+                })}
+              >
+                <Archive size={14} /> Archive class
+              </button>
+            )}
           </div>
         </PageHeader>
 
@@ -473,15 +542,71 @@ export default function TeacherClassDetailPage() {
               icon={Play}
               title="Session Manager"
               hint={
-                hasActiveSession
-                  ? 'A live session is currently active for this class. Only one active session is permitted at a time.'
-                  : hasAnyLiveClassSession
-                    ? 'A live class session is currently in progress. End the current live session first.'
-                    : 'Start a new session under this class. Enrolled students will be notified live and can join with one click.'
+                isArchived
+                  ? 'This class series is archived. Past sessions, attendance, and performance records are preserved. Restore this class to start new sessions.'
+                  : hasActiveSession
+                    ? 'A live session is currently active for this class. Only one active session is permitted at a time.'
+                    : hasAnyLiveClassSession
+                      ? 'A live class session is currently in progress. End the current live session first.'
+                      : 'Start a new session under this class. Enrolled students will be notified live and can join with one click.'
               }
             />
 
-            {hasActiveSession ? (
+            {isArchived ? (
+              <div style={{
+                padding: '16px 20px',
+                borderRadius: 16,
+                background: 'color-mix(in srgb, #f59e0b 8%, var(--bg-card))',
+                border: '1px solid color-mix(in srgb, #f59e0b 30%, transparent)',
+                display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                alignItems: isMobile ? 'flex-start' : 'center',
+                justifyContent: 'space-between',
+                gap: 14
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'color-mix(in srgb, #f59e0b 16%, transparent)',
+                    color: '#f59e0b',
+                    flexShrink: 0
+                  }}>
+                    <Archive size={20} />
+                  </span>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 15, fontWeight: 750, color: 'var(--text-primary)' }}>
+                        Class Series Archived
+                      </span>
+                      <Pill tone="#f59e0b">Archived</Pill>
+                    </div>
+                    <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+                      All history, attendance, and analytics are preserved. Restore this class to launch new live sessions.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRestoreClass}
+                  disabled={isArchiving}
+                  style={primaryButton(isArchiving, {
+                    flex: isMobile ? 1 : 'initial',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 13.5
+                  })}
+                >
+                  <ArchiveRestore size={16} /> {isArchiving ? 'Restoring...' : 'Restore class'}
+                </button>
+              </div>
+            ) : hasActiveSession ? (
               <div style={{
                 padding: '16px 20px',
                 borderRadius: 16,
@@ -1611,6 +1736,89 @@ export default function TeacherClassDetailPage() {
                 }}
               >
                 {isRemoving ? 'Removing...' : 'Remove Student'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Archive Class */}
+      {showArchiveModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15,23,42,0.65)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 90,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+          boxSizing: 'border-box'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: 440,
+            background: 'var(--bg-card)', // Solid opaque background
+            borderRadius: 20,
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 20px 45px rgba(0,0,0,0.22)',
+            padding: 24,
+            boxSizing: 'border-box'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <span style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'color-mix(in srgb, #f59e0b 14%, transparent)',
+                color: '#f59e0b'
+              }}>
+                <Archive size={20} />
+              </span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Archive Class Series?
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+                  {cls.name} ({cls.code})
+                </p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 20px' }}>
+              Archiving ends this class series without deleting any data. All past sessions, enrolled students, attendance records, responses, and CSV exports remain completely accessible. New sessions cannot be started and new students cannot join while archived. You can restore this class at any time.
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowArchiveModal(false)}
+                style={ghostButton()}
+                disabled={isArchiving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleArchiveClass}
+                disabled={isArchiving}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: 12,
+                  fontSize: 13.5,
+                  fontWeight: 650,
+                  cursor: isArchiving ? 'not-allowed' : 'pointer',
+                  border: 'none',
+                  background: '#f59e0b',
+                  color: '#fff',
+                  boxShadow: '0 4px 14px rgba(245,158,11,0.30)'
+                }}
+              >
+                {isArchiving ? 'Archiving...' : 'Archive class'}
               </button>
             </div>
           </div>

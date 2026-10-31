@@ -103,12 +103,17 @@ jest.mock('../lib/api', () => ({
     create: jest.fn(),
     join: jest.fn(),
     createSession: jest.fn(),
-    updateMember: jest.fn().mockResolvedValue({ success: true })
+    updateMember: jest.fn().mockResolvedValue({ success: true }),
+    archive: jest.fn().mockResolvedValue({ success: true }),
+    restore: jest.fn().mockResolvedValue({ success: true })
   }
 }))
 
 import TeacherClassesPage from '../pages/TeacherClassesPage'
 import TeacherClassDetailPage from '../pages/TeacherClassDetailPage'
+import StudentClassesPage from '../pages/StudentClassesPage'
+import StudentClassDetailPage from '../pages/StudentClassDetailPage'
+import { classApi } from '../lib/api'
 
 describe('TeacherClassesPage', () => {
   it('renders classes list with code, live pill, and overview statistics', async () => {
@@ -216,5 +221,162 @@ describe('TeacherClassDetailPage', () => {
 
     expect(screen.getByText('Per-Session Breakdown')).toBeInTheDocument()
     expect(screen.getAllByText('Lecture 4: Consensus').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('handles archiving and restoring classes with confirmation and state updates', async () => {
+    // When class is active and no session is live
+    classApi.getById.mockResolvedValueOnce({
+      class: {
+        _id: 'class-1',
+        name: 'Distributed Systems 2026',
+        code: 'DS2026',
+        isActive: true,
+        teacher: { _id: 'teacher-1', name: 'Prof. Miller' }
+      },
+      activeSession: null,
+      stats: { totalSessions: 4, totalMembers: 12, pendingRequests: 0 }
+    })
+    classApi.getAll.mockResolvedValueOnce({
+      classes: []
+    })
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/teacher/classes/class-1']}>
+        <Routes>
+          <Route path="/teacher/classes/:id" element={<TeacherClassDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Archive class/i })).toBeInTheDocument()
+    })
+
+    // Click "Archive class" to open confirm dialog
+    fireEvent.click(screen.getByRole('button', { name: /Archive class/i }))
+
+    expect(screen.getByText('Archive Class Series?')).toBeInTheDocument()
+    expect(screen.getByText(/Archiving ends this class series without deleting any data/i)).toBeInTheDocument()
+
+    // Confirm archive
+    const confirmButtons = screen.getAllByRole('button', { name: /Archive class/i })
+    fireEvent.click(confirmButtons[confirmButtons.length - 1])
+
+    await waitFor(() => {
+      expect(classApi.archive).toHaveBeenCalledWith('class-1')
+    })
+
+    unmount()
+
+    // Now render archived class
+    classApi.getById.mockResolvedValueOnce({
+      class: {
+        _id: 'class-1',
+        name: 'Distributed Systems 2026',
+        code: 'DS2026',
+        isActive: false,
+        teacher: { _id: 'teacher-1', name: 'Prof. Miller' }
+      },
+      activeSession: null,
+      stats: { totalSessions: 4, totalMembers: 12, pendingRequests: 0 }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/teacher/classes/class-1']}>
+        <Routes>
+          <Route path="/teacher/classes/:id" element={<TeacherClassDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Archived').length).toBeGreaterThanOrEqual(1)
+    })
+
+    // Should show "Restore class" and "Class Series Archived" banner
+    expect(screen.getByText('Class Series Archived')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Start New Session/i })).not.toBeInTheDocument()
+
+    const restoreButtons = screen.getAllByRole('button', { name: /Restore class/i })
+    expect(restoreButtons.length).toBeGreaterThanOrEqual(1)
+
+    // Click "Restore class"
+    fireEvent.click(restoreButtons[0])
+
+    await waitFor(() => {
+      expect(classApi.restore).toHaveBeenCalledWith('class-1')
+    })
+  })
+})
+
+describe('Student Class Views - Archived State', () => {
+  it('renders Archived badge on student class list when class is archived', async () => {
+    classApi.getAll.mockResolvedValueOnce({
+      classes: [
+        {
+          _id: 'class-archived',
+          name: 'Computer Networks',
+          code: 'NET101',
+          isActive: false,
+          memberStatus: 'active',
+          totalSessions: 5,
+          teacher: { name: 'Prof. Alice' }
+        }
+      ]
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/student/classes']}>
+        <Routes>
+          <Route path="/student/classes" element={<StudentClassesPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Computer Networks')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('Archived')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Join Live Session/i })).not.toBeInTheDocument()
+  })
+
+  it('renders informative banner and Archived badge on student class detail when archived', async () => {
+    classApi.getById.mockResolvedValueOnce({
+      class: {
+        _id: 'class-archived',
+        name: 'Computer Networks',
+        code: 'NET101',
+        isActive: false,
+        teacher: { name: 'Prof. Alice' }
+      },
+      activeSession: null
+    })
+    classApi.getMemberPerformance.mockResolvedValueOnce({
+      student: { _id: 's1', name: 'Alice Smith' },
+      status: 'active',
+      sessionsAttended: 3,
+      totalClassSessions: 5,
+      pollsAttempted: 10,
+      correctCount: 8,
+      accuracy: 80,
+      sessions: []
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/student/classes/class-archived']}>
+        <Routes>
+          <Route path="/student/classes/:id" element={<StudentClassDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('This class series has ended')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText(/Your teacher has archived this class/i)).toBeInTheDocument()
+    expect(screen.getByText('Archived')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Join Live Session/i })).not.toBeInTheDocument()
   })
 })

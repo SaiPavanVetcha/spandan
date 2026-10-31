@@ -27,7 +27,8 @@ import {
   Clock,
   XCircle,
   FileSpreadsheet,
-  ChartColumn
+  ChartColumn,
+  Archive
 } from 'lucide-react'
 
 export default function StudentClassDetailPage() {
@@ -130,6 +131,7 @@ export default function StudentClassDetailPage() {
   }
 
   const cls = classData?.class || {}
+  const isArchived = cls.isActive === false
   const activeSession = classData?.activeSession || null
   const sessions = performance?.sessions || []
 
@@ -162,7 +164,11 @@ export default function StudentClassDetailPage() {
               <span style={{ fontWeight: 700, letterSpacing: '0.04em' }}>CLASS SERIES</span>
               <span style={{ opacity: 0.6 }}>•</span>
               <CodeChip code={cls.code || ''} variant="header" />
-              {activeSession && <Pill tone="#10b981" dot>Session Live</Pill>}
+              {isArchived ? (
+                <Pill tone="#f59e0b">Archived</Pill>
+              ) : (
+                activeSession && <Pill tone="#10b981" dot>Session Live</Pill>
+              )}
             </div>
           }
           title={cls.name || 'Class'}
@@ -184,6 +190,41 @@ export default function StudentClassDetailPage() {
           boxSizing: 'border-box',
           background: pageWash
         }}>
+          {isArchived && (
+            <div style={{
+              padding: '14px 18px',
+              borderRadius: 16,
+              background: 'color-mix(in srgb, #f59e0b 9%, var(--bg-card))',
+              border: '1px solid color-mix(in srgb, #f59e0b 30%, transparent)',
+              marginBottom: 20,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12
+            }}>
+              <span style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'color-mix(in srgb, #f59e0b 16%, transparent)',
+                color: '#f59e0b',
+                flexShrink: 0
+              }}>
+                <Archive size={18} />
+              </span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  This class series has ended
+                </div>
+                <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Your teacher has archived this class. Past sessions, questions, attendance, and your performance records remain fully accessible.
+                </p>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div style={{
               padding: '12px 16px',
@@ -258,7 +299,7 @@ export default function StudentClassDetailPage() {
           {activeTab === 'sessions' && (
             <>
               {/* Live Session Banner (Real-time update) */}
-              {activeSession && (
+              {!isArchived && activeSession && (
                 <div style={{
                   ...cardStyle(isMobile),
                   background: 'linear-gradient(135deg, color-mix(in srgb, #10b981 12%, var(--bg-card)) 0%, color-mix(in srgb, var(--accent) 8%, var(--bg-card)) 100%)',

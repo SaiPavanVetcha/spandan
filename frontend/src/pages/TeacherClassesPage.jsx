@@ -263,7 +263,8 @@ export default function TeacherClassesPage() {
               gap: 16
             }}>
               {classes.map((cls) => {
-                const hasLive = !!cls.activeSession
+                const isArchived = cls.isActive === false
+                const hasLive = !isArchived && !!cls.activeSession
                 return (
                   <div
                     key={cls._id}
@@ -289,9 +290,11 @@ export default function TeacherClassesPage() {
                         position: 'absolute',
                         inset: '0 0 auto 0',
                         height: 3,
-                        background: hasLive
-                          ? 'linear-gradient(90deg, #10b981, #34d399)'
-                          : 'linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 35%, transparent))'
+                        background: isArchived
+                          ? '#f59e0b'
+                          : hasLive
+                            ? 'linear-gradient(90deg, #10b981, #34d399)'
+                            : 'linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 35%, transparent))'
                       }}
                     />
 
@@ -307,11 +310,13 @@ export default function TeacherClassesPage() {
                           justifyContent: 'center',
                           fontSize: 20,
                           flexShrink: 0,
-                          background: hasLive
-                            ? 'color-mix(in srgb, #10b981 12%, transparent)'
-                            : 'color-mix(in srgb, var(--accent) 12%, transparent)',
-                          color: hasLive ? '#10b981' : 'var(--accent)',
-                          border: `1px solid ${hasLive ? 'color-mix(in srgb, #10b981 25%, transparent)' : 'color-mix(in srgb, var(--accent) 25%, transparent)'}`
+                          background: isArchived
+                            ? 'color-mix(in srgb, #f59e0b 12%, transparent)'
+                            : hasLive
+                              ? 'color-mix(in srgb, #10b981 12%, transparent)'
+                              : 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                          color: isArchived ? '#f59e0b' : hasLive ? '#10b981' : 'var(--accent)',
+                          border: `1px solid ${isArchived ? 'color-mix(in srgb, #f59e0b 25%, transparent)' : hasLive ? 'color-mix(in srgb, #10b981 25%, transparent)' : 'color-mix(in srgb, var(--accent) 25%, transparent)'}`
                         }}
                       >
                         {renderIcon(School, 20)}
@@ -335,11 +340,17 @@ export default function TeacherClassesPage() {
                         </h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                           <CodeChip code={cls.code} />
-                          {hasLive && (
-                            <Pill tone="#10b981" dot>Live Session</Pill>
-                          )}
-                          {cls.pendingRequests > 0 && (
-                            <Pill tone="#f59e0b">{cls.pendingRequests} pending</Pill>
+                          {isArchived ? (
+                            <Pill tone="#f59e0b">Archived</Pill>
+                          ) : (
+                            <>
+                              {hasLive && (
+                                <Pill tone="#10b981" dot>Live Session</Pill>
+                              )}
+                              {cls.pendingRequests > 0 && (
+                                <Pill tone="#f59e0b">{cls.pendingRequests} pending</Pill>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

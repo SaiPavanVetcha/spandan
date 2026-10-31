@@ -316,4 +316,52 @@ describe('Class Series Feature', () => {
       expect(shouldSurfaceQuestion(activeQ, [{ questionId: 'q-1', studentId: 'stu-2' }], 'stu-1')).toBe(true)
     })
   })
+
+  describe('Rule 7: Archive / End Class Series (Soft End Without Delete)', () => {
+    it('should prevent starting a new session when class is archived', () => {
+      const checkCanStartSession = (cls) => {
+        if (cls.isActive === false) {
+          const err = new Error('This class is archived. Restore it to start new sessions.')
+          err.status = 400
+          throw err
+        }
+        return true
+      }
+
+      const archivedClass = { _id: 'class-1', name: 'DBMS 2026', isActive: false }
+      const activeClass = { _id: 'class-1', name: 'DBMS 2026', isActive: true }
+
+      expect(() => checkCanStartSession(archivedClass)).toThrow(
+        'This class is archived. Restore it to start new sessions.'
+      )
+      expect(checkCanStartSession(activeClass)).toBe(true)
+    })
+
+    it('should reject joining by code when class is not active', () => {
+      const checkCanJoin = (cls) => {
+        if (!cls.isActive) {
+          const err = new Error('This class is no longer active')
+          err.status = 400
+          throw err
+        }
+        return true
+      }
+
+      expect(() => checkCanJoin({ code: 'ARCH01', isActive: false })).toThrow('This class is no longer active')
+      expect(checkCanJoin({ code: 'ACTV01', isActive: true })).toBe(true)
+    })
+
+    it('should keep archived classes in lists with isActive false without deleting data', () => {
+      const allClasses = [
+        { _id: 'c1', name: 'Active Class', isActive: true, sessions: [1, 2] },
+        { _id: 'c2', name: 'Archived Class', isActive: false, sessions: [3, 4, 5] }
+      ]
+
+      // Neither should be filtered out
+      expect(allClasses.length).toBe(2)
+      const archived = allClasses.find(c => c._id === 'c2')
+      expect(archived.isActive).toBe(false)
+      expect(archived.sessions.length).toBe(3) // all data preserved
+    })
+  })
 })

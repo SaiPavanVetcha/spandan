@@ -63,6 +63,7 @@ export const getTeacherClasses = async (teacherId) => {
 
     return {
       ...c,
+      isActive: c.isActive !== false,
       totalSessions: cRooms.length,
       activeSession: activeSession ? { _id: activeSession._id, name: activeSession.name, code: activeSession.code } : null,
       totalMembers: mCounts.active,
@@ -317,6 +318,40 @@ export const updateMemberStatus = async (classId, studentId, teacherId, action) 
   }
 }
 
+export const archiveClass = async (classId, teacherId) => {
+  const cls = await Class.findById(classId)
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+  if (String(cls.teacher) !== String(teacherId)) {
+    const err = new Error('Only the class teacher can archive this class')
+    err.status = 403
+    throw err
+  }
+  cls.isActive = false
+  await cls.save()
+  return cls
+}
+
+export const restoreClass = async (classId, teacherId) => {
+  const cls = await Class.findById(classId)
+  if (!cls) {
+    const err = new Error('Class not found')
+    err.status = 404
+    throw err
+  }
+  if (String(cls.teacher) !== String(teacherId)) {
+    const err = new Error('Only the class teacher can restore this class')
+    err.status = 403
+    throw err
+  }
+  cls.isActive = true
+  await cls.save()
+  return cls
+}
+
 export const createClassSession = async (classId, teacherId, { name, settings = {} }) => {
   const cls = await Class.findById(classId)
   if (!cls) {
@@ -328,6 +363,12 @@ export const createClassSession = async (classId, teacherId, { name, settings = 
   if (String(cls.teacher) !== String(teacherId)) {
     const err = new Error('Only the class teacher can start a session')
     err.status = 403
+    throw err
+  }
+
+  if (cls.isActive === false) {
+    const err = new Error('This class is archived. Restore it to start new sessions.')
+    err.status = 400
     throw err
   }
 

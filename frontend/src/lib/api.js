@@ -159,6 +159,8 @@ export const classApi = {
   getMembers: (id) => api.get(`/classes/${id}/members`),
   getMemberPerformance: (id, studentId) => api.get(`/classes/${id}/members/${studentId}/performance`),
   updateMember: (id, studentId, action) => api.patch(`/classes/${id}/members/${studentId}`, { action }),
+  archive: (id) => api.post(`/classes/${id}/archive`),
+  restore: (id) => api.post(`/classes/${id}/restore`),
   exportCsv: (id, filename) => api.downloadBlob(`/classes/${id}/export`, filename)
 }
 

@@ -1,6 +1,8 @@
 import express from 'express'
 import {
   createClass,
+  archiveClass,
+  restoreClass,
   getTeacherClasses,
   getStudentClasses,
   getClassById,
@@ -96,6 +98,57 @@ router.get('/:id', authenticate, async (req, res) => {
   try {
     const data = await getClassById(req.params.id, req.user)
     res.json(data)
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message })
+  }
+})
+
+// Archive a class (teacher owner only)
+router.post('/:id/archive', authenticate, authorize('teacher'), requireApprovedTeacher, async (req, res) => {
+  try {
+    const cls = await archiveClass(req.params.id, req.user._id)
+    const io = req.app.get('io')
+    if (io) {
+      io.emit('class:updated', { classId: req.params.id, isActive: false })
+    }
+    res.json({ message: 'Class archived successfully', class: cls })
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message })
+  }
+})
+
+// Restore an archived class (teacher owner only)
+router.post('/:id/restore', authenticate, authorize('teacher'), requireApprovedTeacher, async (req, res) => {
+  try {
+    const cls = await restoreClass(req.params.id, req.user._id)
+    const io = req.app.get('io')
+    if (io) {
+      io.emit('class:updated', { classId: req.params.id, isActive: true })
+    }
+    res.json({ message: 'Class restored successfully', class: cls })
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message })
+  }
+})
+
+// Update / PATCH class (e.g. { isActive: false/true })
+router.patch('/:id', authenticate, authorize('teacher'), requireApprovedTeacher, async (req, res) => {
+  try {
+    const { isActive } = req.body
+    let cls
+    if (isActive === false) {
+      cls = await archiveClass(req.params.id, req.user._id)
+    } else if (isActive === true) {
+      cls = await restoreClass(req.params.id, req.user._id)
+    } else {
+      cls = (await getClassById(req.params.id, req.user))?.class
+    }
+
+    const io = req.app.get('io')
+    if (io) {
+      io.emit('class:updated', { classId: req.params.id, isActive: cls.isActive })
+    }
+    res.json({ message: 'Class updated successfully', class: cls })
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message })
   }
